@@ -106,6 +106,7 @@ Base path:
 - `serviceCode`
 - `description`
 - `billedAmount`
+- `dateOfService`
 - `status`
 
 ### Line Decision
@@ -143,7 +144,7 @@ Base path:
 ## Notes
 
 - Adjudication is explicit and does not run automatically on claim creation.
-- New claim submission requires `dateOfService`; legacy stored claims may still have `null`.
+- New claim submission requires claim-level `dateOfService`; each line item may optionally override it with its own `dateOfService`.
 - Disputes are claim-level in v1, with optional references to specific line items.
 - Overturning a dispute is limited to disputes that reference denied line items.
 - Payment is tracked at the line-item level and rolled up to the claim.

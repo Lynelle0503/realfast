@@ -120,17 +120,17 @@ Cost:
 
 - It skips an important real-world adjudication step.
 
-### Simplification: Claim-Level Service Date Only
+### Simplification: Claim-Level Default Plus Line-Level Service Dates
 
-The system now stores `dateOfService` at the claim level and uses it for policy-active checks and policy-year benefit periods.
+The system stores `dateOfService` on the claim as a submission default and also persists `dateOfService` on each line item. Adjudication uses the line-item date when present and falls back to the claim-level default.
 
 Why:
 
-- It closes the largest adjudication gap without introducing per-line date overrides.
+- It supports mixed-date claims without removing the simpler claim-level submission flow.
 
 Cost:
 
-- Mixed-date claims still are not modeled; every line on a claim shares one service date.
+- There is still no separate service date per diagnosis or per provider segment, and claim summaries still surface the claim-level default date.
 
 ### Simplification: Minimal Dispute Resolution
 
@@ -163,6 +163,7 @@ Cost:
 - Yearly dollar cap usage accumulates against insurer-paid dollars.
 - Visit cap usage increments by one per approved covered line.
 - Member out-of-pocket usage is tracked with `member_oop_applied`.
+- Deductible usage is tracked with `deductible_applied`.
 - Claim adjudication is explicit and does not happen automatically on claim creation.
 - The local UI is a demo operator surface, not a production-grade frontend.
 
@@ -170,13 +171,9 @@ Cost:
 
 These are the places where the current model is ahead of the actual adjudicator.
 
-### Deductible Tracking Is Still Claim-Local
-
-The system now allows repeated claims on the same policy and correctly accumulates caps and out-of-pocket usage across the policy year, but deductible history is still inferred from the current claim rather than tracked through its own cross-claim ledger metric.
-
 ### Dispute Overturn Is Intentionally Narrow
 
-Overturning a dispute requires referenced denied line items and auto-approves those line items on the original claim. That is enough for the assignment and the next-round extension path, but it is not a full appeals subsystem.
+Overturning a dispute requires referenced denied line items and re-runs those lines through the normal adjudication rules on the original claim. That keeps coverage, policy-active, caps, and manual-review behavior consistent with the main adjudication path, but it is still not a full appeals subsystem.
 
 ## Why This Shape Still Works For The Assignment
 

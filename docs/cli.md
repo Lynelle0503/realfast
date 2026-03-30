@@ -236,7 +236,7 @@ This prints totals, underlying ledger entries, the matched service rule, and any
 
 ## Current Workflow Constraints
 
-- New claim submission requires a claim-level `dateOfService`.
+- New claim submission requires a claim-level `dateOfService`, and each `--line-item` can optionally include a fourth `dateOfService` segment.
 - Multiple claims on the same member-policy pair are now allowed.
 - Dispute overturn is limited to disputes that reference denied line items.
 

@@ -1,46 +1,54 @@
 # Self-Review
 
-This project delivers a working, explainable v1 claims processing system with multiple ways to interact with it. The strongest parts of the submission are the domain decomposition, the separation between domain/application/infrastructure layers, and the fact that the core workflow is executable end to end through tests, CLI commands, the API, and the local UI.
+This project delivers a working v1 claims processing system with a real adjudication path, explicit state handling, stored explanations, and multiple runnable surfaces. The strongest part of the submission is that it is not just CRUD: it has a coherent domain model, a clear workflow, and enough tests and delivery surfaces to demonstrate the design.
 
-## What Is Good
+## What Works In My Favor
 
-- The core domain is small and understandable.
-  Members, policies, claims, line items, decisions, accumulators, and disputes are modeled as separate concepts with fairly clean boundaries.
-- Claim and line-item state handling is explicit.
-  Line items own adjudication and payment progression, and claim status is derived from line-item state rather than set manually.
-- The adjudication logic is deterministic and easy to follow.
-  Coverage matching, service-date validation, deductible application, coinsurance, out-of-pocket max handling, visit caps, dollar caps, and manual-review routing all happen in one well-tested service.
-- The accumulator model is a good v1 foundation.
-  Usage is tracked as ledger-style entries instead of a mutable running total, which gives a better path for future reversals and auditability.
-- The project is test-backed.
-  There are unit tests for domain logic and integration tests for persistence, HTTP, CLI, seeding, and the local UI server.
-- The local UI improves explainability.
-  It shows claim state transitions, line-item decisions, raw JSON for singleton policy and dispute endpoints, and now also exposes dispute resolution and claim service-date entry.
+- The domain decomposition is clean and easy to explain.
+  Members, policies, claims, line items, decisions, accumulators, and disputes are modeled as separate concepts, and the code mostly keeps those responsibilities from bleeding together.
+- Claim status is derived instead of manually edited.
+  That was the right modeling choice for the assignment because it forces consistency between line-item states and the aggregate claim state.
+- The adjudication path handles meaningful edge cases.
+  The service does more than check a covered flag. It applies service-code matching, service-date validation, policy-year benefit windows, deductible, coinsurance, yearly dollar caps, yearly visit caps, out-of-pocket max tracking, and manual-review routing for partial-payment edge cases.
+- Denial and review outcomes are explainable.
+  The implementation uses normalized reason codes plus stored member-facing text instead of ad hoc strings, which makes the behavior easier to test and easier to extend.
+- The accumulator model is a good foundation.
+  Usage is tracked through ledger-like entries for dollars paid, visits used, member out-of-pocket, and deductible application, which is a better shape than keeping mutable counters on the policy or claim.
+- The workflow is executable end to end.
+  The same application services are exposed through a CLI, HTTP API, and local UI, which makes the project easier to demo and shows that the domain model is not tightly coupled to one interface.
+- The test coverage supports the design.
+  There are unit tests around the core business rules and integration tests around SQLite persistence, CLI flows, API flows, seeding, and the local UI server.
 
-## What Is Rough
+## Pending Gaps
 
-- The domain is still narrower than a realistic claims system.
-  There is still no allowed amount model, provider network logic, medical necessity review, eligibility checks, or full appeals workflow.
-- Deductible history is still weaker than the rest of the accumulator model.
-  Multiple claims on the same policy year now work for caps and out-of-pocket max, but deductible consumption is still inferred from the current claim instead of tracked as its own policy-year ledger metric.
+- The pricing model is intentionally simplified.
+  The adjudicator uses billed amount as the allowed amount, so there is still no fee schedule, provider contract pricing, network logic, or allowed-amount calculation step.
+- Policy activity is too simple for a real system.
+  A policy is effectively considered active forever once the service date is on or after the effective date. There is no termination date, cancellation, reinstatement, or versioned eligibility model.
+- Input validation is still too permissive.
+  The system validates shapes and required presence in many places, but it still allows domain-invalid inputs like negative billed amounts, unrealistic percentage values, malformed date strings, and duplicate or contradictory service rules.
 - Dispute resolution is intentionally narrow.
-  The system can resolve disputes as upheld or overturned, but there is still no reviewer assignment, no queued appeals workbench, and no payment clawback flow.
-- The explanation layer is much better, but still simple.
-  It now injects service names, service dates, and cap context, but it is not yet localized, templated by audience, or versioned as policy language.
+  An overturned dispute re-runs denied lines through normal adjudication rather than applying a reviewer override, so it is still not a true appeals workflow with evidence, reviewer identity, queueing, or controlled exception handling.
+- Ledger reversals are modeled but not truly used.
+  The accumulator design points toward auditability, but v1 still lacks automated reversal entries, payment clawbacks, and broader retroactive adjustment flows.
+- Operational concerns are mostly out of scope.
+  There is no authentication, authorization, concurrency control, reviewer audit identity, background workflow orchestration, or production-grade observability.
+- The UI is a demo surface, not an operations tool.
+  It is helpful for walkthroughs, but it is not a hardened back-office experience with queue management, filtering, or role-aware workflows.
 
 ## Risks I Would Flag In A Real Review
 
-- Manual review approval can produce a partial payout, but that path is handled as a direct operator decision rather than a richer reviewer workflow.
-- The local UI is intentionally simple and is not a substitute for a hardened frontend or back-office operations tool.
-- There is no authentication, authorization, audit identity, or concurrency control.
+- Manual review approval can produce a partial payout, but that path is still a direct operator action rather than a richer review workflow with explicit rationale capture.
+- The dispute subsystem can change dispute status without representing the full downstream financial consequences that a real appeals process would require.
+- The database schema stores the current model well enough for v1, but it does not yet encode many business invariants at the database level.
 
 ## If I Had More Time
 
-- Explicitly model deductible consumption across multiple claims within the same policy year.
-- Expand disputes into a broader appeals workflow with queueing, reviewer assignment, and payment adjustments.
-- Add richer explanation templating and localized member communication.
-- Add README examples for sample payloads and a richer API walkthrough.
+- Add stronger domain validation for money, dates, percent ranges, and policy/service-rule integrity.
+- Expand disputes into a fuller appeals workflow with reviewer assignment, evidence, overrides, and payment adjustments.
+- Introduce an allowed-amount model so adjudication is not based directly on billed amount.
+- Add audit identity and stronger operational safeguards around manual review and payment actions.
 
 ## Overall Assessment
 
-For a one-day take-home, this is a solid v1 with a real domain model, executable workflow, and meaningful edge-case handling around caps and manual review. The code is much stronger as a foundation for discussion and extension than as a finished insurance system, which is acceptable for the assignment and consistent with the stated next-round expectation that the system would be extended together.
+The code shows deliberate modeling decisions, handles mixed adjudication outcomes, and is easier to extend than a thinner CRUD submission would be. The biggest weaknesses are around real-world insurance depth and operational rigor, but those are understandable scope cuts for the assignment and leave clear next steps for a follow-up pairing round.
