@@ -9,43 +9,36 @@ This project delivers a working, explainable v1 claims processing system with mu
 - Claim and line-item state handling is explicit.
   Line items own adjudication and payment progression, and claim status is derived from line-item state rather than set manually.
 - The adjudication logic is deterministic and easy to follow.
-  Coverage matching, deductible application, coinsurance, visit caps, dollar caps, and manual-review routing all happen in one well-tested service.
+  Coverage matching, service-date validation, deductible application, coinsurance, out-of-pocket max handling, visit caps, dollar caps, and manual-review routing all happen in one well-tested service.
 - The accumulator model is a good v1 foundation.
   Usage is tracked as ledger-style entries instead of a mutable running total, which gives a better path for future reversals and auditability.
 - The project is test-backed.
   There are unit tests for domain logic and integration tests for persistence, HTTP, CLI, seeding, and the local UI server.
 - The local UI improves explainability.
-  It shows claim state transitions, line-item decisions, and now also surfaces raw JSON for singleton policy and dispute endpoints.
+  It shows claim state transitions, line-item decisions, raw JSON for singleton policy and dispute endpoints, and now also exposes dispute resolution and claim service-date entry.
 
 ## What Is Rough
 
 - The domain is still narrower than a realistic claims system.
-  There is no date of service, allowed amount, provider network logic, medical necessity review, eligibility checks, or appeals workflow.
-- Some modeled fields are not yet enforced.
-  `annualOutOfPocketMax` exists on the policy but is not currently applied during adjudication.
-- The reason catalog is broader than the implemented adjudicator.
-  `MISSING_INFORMATION` and `POLICY_NOT_ACTIVE` exist as reason codes, but the current claim model does not contain the fields needed for those outcomes to be produced.
-- Claim creation is artificially constrained.
-  The code only allows one claim per member per policy, which simplifies the demo but is not realistic for production claims processing.
-- Disputes are only captured, not resolved.
-  The system can open and view disputes, but there is no dispute lifecycle, no appeals adjudication, and no accumulator reversal logic tied to dispute outcomes.
-- Some explanations are still generic.
-  The system stores normalized reason text, but member-facing denial text does not yet include dynamic service names or specific policy cap values inside the persisted decision itself.
+  There is still no allowed amount model, provider network logic, medical necessity review, eligibility checks, or full appeals workflow.
+- Deductible history is still weaker than the rest of the accumulator model.
+  Multiple claims on the same policy year now work for caps and out-of-pocket max, but deductible consumption is still inferred from the current claim instead of tracked as its own policy-year ledger metric.
+- Dispute resolution is intentionally narrow.
+  The system can resolve disputes as upheld or overturned, but there is still no reviewer assignment, no queued appeals workbench, and no payment clawback flow.
+- The explanation layer is much better, but still simple.
+  It now injects service names, service dates, and cap context, but it is not yet localized, templated by audience, or versioned as policy language.
 
 ## Risks I Would Flag In A Real Review
 
-- Using adjudication time instead of service date for benefit-period calculations is a meaningful domain shortcut.
 - Manual review approval can produce a partial payout, but that path is handled as a direct operator decision rather than a richer reviewer workflow.
 - The local UI is intentionally simple and is not a substitute for a hardened frontend or back-office operations tool.
 - There is no authentication, authorization, audit identity, or concurrency control.
 
 ## If I Had More Time
 
-- Add service dates to claim lines and use them for policy-active and benefit-period decisions.
-- Enforce out-of-pocket max and explicitly model member-paid deductible history.
-- Remove the one-claim-per-policy restriction and support repeated claims over time.
-- Expand disputes into an appeals workflow with statuses and adjudication outcomes.
-- Make explanation text more dynamic and member-friendly while preserving reason-code normalization.
+- Explicitly model deductible consumption across multiple claims within the same policy year.
+- Expand disputes into a broader appeals workflow with queueing, reviewer assignment, and payment adjustments.
+- Add richer explanation templating and localized member communication.
 - Add README examples for sample payloads and a richer API walkthrough.
 
 ## Overall Assessment

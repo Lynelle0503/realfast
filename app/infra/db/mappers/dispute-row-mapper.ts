@@ -9,6 +9,8 @@ interface DisputeRow {
   reason: string;
   note: string | null;
   referenced_line_item_ids_json: string;
+  resolved_at: string | null;
+  resolution_note: string | null;
 }
 
 export function mapDisputeRow(row: DisputeRow): Dispute {
@@ -16,9 +18,11 @@ export function mapDisputeRow(row: DisputeRow): Dispute {
     disputeId: row.id,
     claimId: row.claim_id,
     memberId: row.member_id,
-    status: row.status,
+    status: row.status as Dispute['status'],
     reason: row.reason,
     note: row.note,
-    referencedLineItemIds: parseJsonArray<string>(row.referenced_line_item_ids_json)
+    referencedLineItemIds: parseJsonArray<string>(row.referenced_line_item_ids_json),
+    resolvedAt: row.resolved_at,
+    resolutionNote: row.resolution_note
   };
 }

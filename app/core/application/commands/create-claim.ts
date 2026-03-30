@@ -31,12 +31,6 @@ export async function createClaim(
     throw new BusinessRuleError('The policy does not belong to the member.');
   }
 
-  const existingClaims = await dependencies.claimRepository.listByMemberId(input.memberId);
-  const duplicateClaim = existingClaims.find((claim) => claim.policyId === input.policyId);
-  if (duplicateClaim) {
-    throw new BusinessRuleError('Only one claim is allowed for a member on a particular policy.');
-  }
-
   const lineItems: ClaimLineItem[] = input.lineItems.map((lineItem) => ({
     lineItemId: dependencies.idGenerator.next('LI'),
     serviceCode: lineItem.serviceCode,
@@ -50,6 +44,7 @@ export async function createClaim(
     memberId: input.memberId,
     policyId: input.policyId,
     provider: input.provider,
+    dateOfService: input.dateOfService,
     diagnosisCodes: input.diagnosisCodes,
     status: 'submitted',
     approvedLineItemCount: 0,

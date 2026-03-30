@@ -28,6 +28,7 @@ export interface Claim {
   memberId: string;
   policyId: string;
   provider: Provider;
+  dateOfService: string | null;
   diagnosisCodes: string[];
   status: ClaimStatus;
   approvedLineItemCount: number;
@@ -45,6 +46,7 @@ export interface CreateClaimInput {
   memberId: string;
   policyId: string;
   provider: Provider;
+  dateOfService: string;
   diagnosisCodes: string[];
   lineItems: CreateClaimLineItemInput[];
 }

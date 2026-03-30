@@ -26,11 +26,11 @@ export type ReasonCode = (typeof REASON_CODES)[number];
 export const BENEFIT_PERIODS = ['policy_year'] as const;
 export type BenefitPeriod = (typeof BENEFIT_PERIODS)[number];
 
-export const ACCUMULATOR_METRIC_TYPES = ['dollars_paid', 'visits_used'] as const;
-export type AccumulatorMetricType = (typeof ACCUMULATOR_METRIC_TYPES)[number];
-
 export const ACCUMULATOR_ENTRY_STATUSES = ['posted', 'reversed'] as const;
 export type AccumulatorEntryStatus = (typeof ACCUMULATOR_ENTRY_STATUSES)[number];
 
-export const DISPUTE_STATUSES = ['open'] as const;
+export const ACCUMULATOR_METRIC_TYPES = ['dollars_paid', 'visits_used', 'member_oop_applied'] as const;
+export type AccumulatorMetricType = (typeof ACCUMULATOR_METRIC_TYPES)[number];
+
+export const DISPUTE_STATUSES = ['open', 'upheld', 'overturned'] as const;
 export type DisputeStatus = (typeof DISPUTE_STATUSES)[number];

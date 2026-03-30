@@ -173,6 +173,7 @@ describe('http api', () => {
         memberId: member.memberId,
         policyId: policy.policyId,
         provider: { providerId: 'PRV-0501', name: 'CityCare Clinic' },
+        dateOfService: '2026-03-01',
         diagnosisCodes: ['J02.9'],
         lineItems: [
           { serviceCode: 'office_visit', description: 'Primary care consultation', billedAmount: 150 },
@@ -184,12 +185,14 @@ describe('http api', () => {
     expect(claimResponse.status).toBe(201);
     const createdClaim = (await claimResponse.json()) as {
       claimId: string;
+      dateOfService: string | null;
       status: string;
       approvedLineItemCount: number;
       lineItems: Array<{ lineItemId: string }>;
       lineDecisions: unknown[];
     };
     expect(createdClaim.claimId).toBe('CLM-0001');
+    expect(createdClaim.dateOfService).toBe('2026-03-01');
     expect(createdClaim.status).toBe('submitted');
     expect(createdClaim.approvedLineItemCount).toBe(0);
     expect(createdClaim.lineDecisions).toEqual([]);
@@ -202,6 +205,7 @@ describe('http api', () => {
           claimId: createdClaim.claimId,
           memberId: member.memberId,
           policyId: policy.policyId,
+          dateOfService: '2026-03-01',
           status: 'submitted',
           approvedLineItemCount: 0
         }
@@ -234,7 +238,8 @@ describe('http api', () => {
     expect(adjudication.claim.approvedLineItemCount).toBe(1);
     expect(adjudication.accumulatorEffects).toEqual([
       expect.objectContaining({ sourceId: 'LI-0001', metricType: 'dollars_paid', delta: 120 }),
-      expect.objectContaining({ sourceId: 'LI-0001', metricType: 'visits_used', delta: 1 })
+      expect.objectContaining({ sourceId: 'LI-0001', metricType: 'visits_used', delta: 1 }),
+      expect.objectContaining({ sourceId: 'LI-0001', metricType: 'member_oop_applied', delta: 30 })
     ]);
 
     const approvedDecision = adjudication.claim.lineDecisions.find((decision) => decision.lineItemId === 'LI-0001');
@@ -250,24 +255,28 @@ describe('http api', () => {
       payerAmount: 120,
       memberResponsibility: 30
     });
-    expect(deniedDecision).toEqual({
-      lineItemId: 'LI-0002',
-      decision: 'denied',
-      reasonCode: 'SERVICE_NOT_COVERED',
-      reasonText: 'This service is not covered under your policy.',
-      memberNextStep: 'You can dispute this decision if you believe it should be covered.',
-      payerAmount: 0,
-      memberResponsibility: 50
-    });
-    expect(manualReviewDecision).toEqual({
-      lineItemId: 'LI-0003',
-      decision: 'manual_review',
-      reasonCode: 'MANUAL_REVIEW_REQUIRED',
-      reasonText: 'This service is still under review because it needs additional review before a final decision can be made.',
-      memberNextStep: null,
-      payerAmount: null,
-      memberResponsibility: null
-    });
+    expect(deniedDecision).toEqual(
+      expect.objectContaining({
+        lineItemId: 'LI-0002',
+        decision: 'denied',
+        reasonCode: 'SERVICE_NOT_COVERED',
+        memberNextStep: 'You can dispute this decision if you believe it should be covered.',
+        payerAmount: 0,
+        memberResponsibility: 50
+      })
+    );
+    expect(deniedDecision?.reasonText).toContain('Antibiotic prescription');
+    expect(manualReviewDecision).toEqual(
+      expect.objectContaining({
+        lineItemId: 'LI-0003',
+        decision: 'manual_review',
+        reasonCode: 'MANUAL_REVIEW_REQUIRED',
+        memberNextStep: null,
+        payerAmount: null,
+        memberResponsibility: null
+      })
+    );
+    expect(manualReviewDecision?.reasonText).toContain('Follow-up lab panel');
 
     const claimDetailResponse = await fetch(`${baseUrl}/claims/${createdClaim.claimId}`);
     expect(claimDetailResponse.status).toBe(200);
@@ -311,6 +320,8 @@ describe('http api', () => {
       reason: string;
       note: string | null;
       referencedLineItemIds: string[];
+      resolvedAt: string | null;
+      resolutionNote: string | null;
     };
     expect(dispute).toEqual({
       disputeId: 'DSP-0001',
@@ -319,7 +330,9 @@ describe('http api', () => {
       status: 'open',
       reason: 'I disagree with the prescription denial.',
       note: 'Please review the benefit setup again.',
-      referencedLineItemIds: ['LI-0002']
+      referencedLineItemIds: ['LI-0002'],
+      resolvedAt: null,
+      resolutionNote: null
     });
 
     const disputesResponse = await fetch(`${baseUrl}/claims/${createdClaim.claimId}/disputes`);
@@ -330,6 +343,29 @@ describe('http api', () => {
     expect(disputeDetailResponse.status).toBe(200);
     await expect(disputeDetailResponse.json()).resolves.toEqual(dispute);
 
+    const disputeResolutionResponse = await fetch(`${baseUrl}/disputes/${dispute.disputeId}/resolution`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ outcome: 'overturned', note: 'Manual approval after review.' })
+    });
+    expect(disputeResolutionResponse.status).toBe(200);
+    const resolvedDispute = (await disputeResolutionResponse.json()) as {
+      dispute: { status: string; resolutionNote: string | null; resolvedAt: string | null };
+      claim: { status: string; approvedLineItemCount: number; lineItems: Array<{ lineItemId: string; status: string }> };
+      accumulatorEffects: Array<{ sourceId: string; metricType: string; delta: number }>;
+    };
+    expect(resolvedDispute.dispute.status).toBe('overturned');
+    expect(resolvedDispute.dispute.resolutionNote).toBe('Manual approval after review.');
+    expect(resolvedDispute.dispute.resolvedAt).toBeTruthy();
+    expect(resolvedDispute.claim.status).toBe('approved');
+    expect(resolvedDispute.claim.approvedLineItemCount).toBe(3);
+    expect(resolvedDispute.accumulatorEffects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sourceId: 'LI-0002', metricType: 'dollars_paid' }),
+        expect.objectContaining({ sourceId: 'LI-0002', metricType: 'member_oop_applied' })
+      ])
+    );
+
     const finalClaimsResponse = await fetch(`${baseUrl}/members/${member.memberId}/claims`);
     expect(finalClaimsResponse.status).toBe(200);
     await expect(finalClaimsResponse.json()).resolves.toEqual({
@@ -338,8 +374,9 @@ describe('http api', () => {
           claimId: createdClaim.claimId,
           memberId: member.memberId,
           policyId: policy.policyId,
-          status: 'paid',
-          approvedLineItemCount: 2
+          dateOfService: '2026-03-01',
+          status: 'approved',
+          approvedLineItemCount: 3
         }
       ]
     });

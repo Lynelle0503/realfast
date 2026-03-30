@@ -4,10 +4,12 @@ export interface Dispute {
   disputeId: string;
   claimId: string;
   memberId: string;
-  status: DisputeStatus | string;
+  status: DisputeStatus;
   reason: string;
   note: string | null;
   referencedLineItemIds: string[];
+  resolvedAt: string | null;
+  resolutionNote: string | null;
 }
 
 export interface CreateDisputeInput {
@@ -16,4 +18,10 @@ export interface CreateDisputeInput {
   reason: string;
   note?: string;
   referencedLineItemIds?: string[];
+}
+
+export interface ResolveDisputeInput {
+  disputeId: string;
+  outcome: Exclude<DisputeStatus, 'open'>;
+  note?: string;
 }

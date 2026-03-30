@@ -265,6 +265,26 @@ paths:
               schema:
                 $ref: '#/components/schemas/Dispute'
 
+  /disputes/{disputeId}/resolution:
+    post:
+      summary: Resolve an open dispute
+      operationId: resolveDispute
+      parameters:
+        - $ref: '#/components/parameters/DisputeId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveDisputeRequest'
+      responses:
+        '200':
+          description: Dispute resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolveDisputeResponse'
+
 components:
   parameters:
     MemberId:
@@ -396,6 +416,7 @@ components:
         - memberId
         - policyId
         - provider
+        - dateOfService
         - diagnosisCodes
         - status
         - approvedLineItemCount
@@ -410,6 +431,11 @@ components:
           type: string
         provider:
           $ref: '#/components/schemas/Provider'
+        dateOfService:
+          oneOf:
+            - type: string
+              format: date
+            - type: 'null'
         diagnosisCodes:
           type: array
           items:
@@ -429,7 +455,7 @@ components:
 
     ClaimSummary:
       type: object
-      required: [claimId, memberId, policyId, status, approvedLineItemCount]
+      required: [claimId, memberId, policyId, dateOfService, status, approvedLineItemCount]
       properties:
         claimId:
           type: string
@@ -437,6 +463,11 @@ components:
           type: string
         policyId:
           type: string
+        dateOfService:
+          oneOf:
+            - type: string
+              format: date
+            - type: 'null'
         status:
           $ref: '#/components/schemas/ClaimStatus'
         approvedLineItemCount:
@@ -444,7 +475,7 @@ components:
 
     CreateClaimRequest:
       type: object
-      required: [memberId, policyId, provider, diagnosisCodes, lineItems]
+      required: [memberId, policyId, provider, dateOfService, diagnosisCodes, lineItems]
       properties:
         memberId:
           type: string
@@ -452,6 +483,9 @@ components:
           type: string
         provider:
           $ref: '#/components/schemas/Provider'
+        dateOfService:
+          type: string
+          format: date
         diagnosisCodes:
           type: array
           items:
@@ -558,7 +592,7 @@ components:
           format: date
         metricType:
           type: string
-          enum: [dollars_paid, visits_used]
+          enum: [dollars_paid, visits_used, member_oop_applied]
         delta:
           type: number
         source:
@@ -607,7 +641,7 @@ components:
 
     Dispute:
       type: object
-      required: [disputeId, claimId, memberId, status, reason, referencedLineItemIds]
+      required: [disputeId, claimId, memberId, status, reason, referencedLineItemIds, resolvedAt, resolutionNote]
       properties:
         disputeId:
           type: string
@@ -617,7 +651,7 @@ components:
           type: string
         status:
           type: string
-          enum: [open]
+          enum: [open, upheld, overturned]
         reason:
           type: string
         note:
@@ -628,6 +662,14 @@ components:
           type: array
           items:
             type: string
+        resolvedAt:
+          oneOf:
+            - type: string
+            - type: 'null'
+        resolutionNote:
+          oneOf:
+            - type: string
+            - type: 'null'
 
     CreateDisputeRequest:
       type: object
@@ -641,6 +683,29 @@ components:
           type: array
           items:
             type: string
+
+    ResolveDisputeRequest:
+      type: object
+      required: [outcome]
+      properties:
+        outcome:
+          type: string
+          enum: [upheld, overturned]
+        note:
+          type: string
+
+    ResolveDisputeResponse:
+      type: object
+      required: [dispute, claim, accumulatorEffects]
+      properties:
+        dispute:
+          $ref: '#/components/schemas/Dispute'
+        claim:
+          $ref: '#/components/schemas/Claim'
+        accumulatorEffects:
+          type: array
+          items:
+            $ref: '#/components/schemas/CoverageAccumulatorEntry'
 
     ClaimStatus:
       type: string

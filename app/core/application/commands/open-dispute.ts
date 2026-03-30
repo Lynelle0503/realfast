@@ -27,7 +27,9 @@ export async function openDispute(
     status: 'open',
     reason: input.reason,
     note: input.note ?? null,
-    referencedLineItemIds: input.referencedLineItemIds ?? []
+    referencedLineItemIds: input.referencedLineItemIds ?? [],
+    resolvedAt: null,
+    resolutionNote: null
   };
 
   await dependencies.disputeRepository.create(dispute);

@@ -9,7 +9,7 @@ Base path:
 ## Design Principles
 
 - Use resource-oriented endpoints for members, policies, claims, and disputes.
-- Use explicit action endpoints for adjudication, manual review resolution, and payment.
+- Use explicit action endpoints for adjudication, manual review resolution, payment, and dispute resolution.
 - Keep claim creation separate from adjudication.
 - Return line-level decisions in claim detail responses.
 - Derive claim status from line-item statuses instead of updating it independently.
@@ -54,6 +54,8 @@ Base path:
   List disputes for a claim.
 - `GET /api/v1/disputes/{disputeId}`
   Fetch dispute details.
+- `POST /api/v1/disputes/{disputeId}/resolution`
+  Resolve an open dispute as `upheld` or `overturned`.
 
 ## Workflow By Minimal API Calls
 
@@ -80,6 +82,8 @@ Base path:
 ### Member Disputes A Decision
 
 1. `POST /api/v1/claims/{claimId}/disputes`
+2. Optional:
+   `POST /api/v1/disputes/{disputeId}/resolution`
 
 ## Response Shape Expectations
 
@@ -89,6 +93,7 @@ Base path:
 - `memberId`
 - `policyId`
 - `provider`
+- `dateOfService`
 - `diagnosisCodes`
 - `status`
 - `approvedLineItemCount`
@@ -122,6 +127,8 @@ Base path:
 - `reason`
 - `note`
 - `referencedLineItemIds`
+- `resolvedAt`
+- `resolutionNote`
 
 ## Status Rules
 
@@ -136,6 +143,8 @@ Base path:
 ## Notes
 
 - Adjudication is explicit and does not run automatically on claim creation.
+- New claim submission requires `dateOfService`; legacy stored claims may still have `null`.
 - Disputes are claim-level in v1, with optional references to specific line items.
+- Overturning a dispute is limited to disputes that reference denied line items.
 - Payment is tracked at the line-item level and rolled up to the claim.
 - The machine-readable API contract is defined in [api/openapi.yaml](/Users/lynelle/Documents/CodeSpace/RealFast/api/openapi.yaml).

@@ -49,6 +49,7 @@ const els = {
   submitClaimNote: document.querySelector('#submit-claim-note'),
   providerId: document.querySelector('#provider-id'),
   providerName: document.querySelector('#provider-name'),
+  submitDateOfService: document.querySelector('#submit-date-of-service'),
   diagnosisCodes: document.querySelector('#diagnosis-codes'),
   lineItemsEditor: document.querySelector('#line-items-editor'),
   addLineItem: document.querySelector('#add-line-item'),
@@ -62,6 +63,10 @@ const els = {
   disputeReason: document.querySelector('#dispute-reason'),
   disputeNote: document.querySelector('#dispute-note'),
   disputeLineItems: document.querySelector('#dispute-line-items'),
+  resolveDisputeForm: document.querySelector('#resolve-dispute-form'),
+  resolveDisputeId: document.querySelector('#resolve-dispute-id'),
+  resolveDisputeOutcome: document.querySelector('#resolve-dispute-outcome'),
+  resolveDisputeNote: document.querySelector('#resolve-dispute-note'),
   toast: document.querySelector('#toast')
 };
 
@@ -376,7 +381,7 @@ function renderMemberDetail() {
     <div class="summary-grid">
       <div class="summary-card"><span>Policies</span><strong>${state.policies.length}</strong></div>
       <div class="summary-card"><span>Claims</span><strong>${state.claims.length}</strong></div>
-      <div class="summary-card"><span>Claim-eligible policies</span><strong>${state.availablePolicies.length}</strong></div>
+      <div class="summary-card"><span>Policies available for new claims</span><strong>${state.availablePolicies.length}</strong></div>
     </div>
   `;
 
@@ -479,7 +484,7 @@ function renderMemberDetail() {
             return `
               <button type="button" class="claim-flow-card ${claim.claimId === state.selectedClaimId ? 'active' : ''}" data-claim-id="${claim.claimId}">
                 <strong>${escapeHtml(claim.claimId)}</strong>
-                <div class="muted">${escapeHtml(policy?.policyId ?? claim.policyId)} · approved lines ${claim.approvedLineItemCount}</div>
+                <div class="muted">${escapeHtml(policy?.policyId ?? claim.policyId)} · service date ${escapeHtml(claim.dateOfService ?? 'missing')} · approved lines ${claim.approvedLineItemCount}</div>
                 ${renderStepper(claim.status)}
               </button>
             `;
@@ -498,11 +503,10 @@ function renderMemberDetail() {
 
   const submitButton = els.submitClaimForm.querySelector('button[type="submit"]');
   if (state.availablePolicies.length === 0) {
-    els.submitClaimNote.textContent =
-      'This member already has a claim on each policy. Create a demo member + policy to submit a new claim flow.';
+    els.submitClaimNote.textContent = 'Create a policy for this member before submitting a claim.';
     submitButton.disabled = true;
   } else {
-    els.submitClaimNote.textContent = 'Submit one new claim against an unused policy for this member.';
+    els.submitClaimNote.textContent = 'Submit a new claim against any policy for this member. Multiple claims per policy are allowed.';
     submitButton.disabled = false;
   }
 }
@@ -527,6 +531,9 @@ function renderClaimDetail() {
                   <span>${escapeHtml(dispute.disputeId)}</span>
                   ${badge(dispute.status)}
                 </div>
+                <div class="muted">Reason: ${escapeHtml(dispute.reason)}</div>
+                ${dispute.resolvedAt ? `<div class="muted">Resolved at ${escapeHtml(dispute.resolvedAt)}</div>` : ''}
+                ${dispute.resolutionNote ? `<div class="muted">Resolution note: ${escapeHtml(dispute.resolutionNote)}</div>` : ''}
                 ${renderEndpointJson(`/api/v1/disputes/${dispute.disputeId}`, state.disputeEndpointData[dispute.disputeId] ?? null)}
               </div>
             `
@@ -552,6 +559,7 @@ function renderClaimDetail() {
     <article class="simple-card">
       <strong>Claim context</strong>
       <div class="simple-row"><span>Provider</span><span>${escapeHtml(state.claim.provider.name)} (${escapeHtml(state.claim.provider.providerId)})</span></div>
+      <div class="simple-row"><span>Service date</span><span>${escapeHtml(state.claim.dateOfService ?? 'missing')}</span></div>
       <div class="simple-row"><span>Diagnosis codes</span><span>${escapeHtml(state.claim.diagnosisCodes.join(', ') || 'none')}</span></div>
       <div class="simple-row"><span>Disputes</span><span>${state.disputes.length}</span></div>
     </article>
@@ -635,6 +643,7 @@ function renderActionForms() {
   const manualReviewLines = state.claim?.lineItems.filter((lineItem) => lineItem.status === 'manual_review') ?? [];
   const approvedLines = state.claim?.lineItems.filter((lineItem) => lineItem.status === 'approved') ?? [];
   const disputableLines = state.claim?.lineItems.filter((lineItem) => lineItem.status === 'denied') ?? [];
+  const openDisputes = state.disputes.filter((dispute) => dispute.status === 'open');
 
   els.adjudicateClaim.disabled = !state.claim || !state.claim.lineItems.some((lineItem) => lineItem.status === 'submitted');
 
@@ -675,6 +684,14 @@ function renderActionForms() {
           )
           .join('');
   els.disputeForm.querySelector('button').disabled = !state.claim;
+
+  els.resolveDisputeId.innerHTML =
+    openDisputes.length === 0
+      ? '<option value="">No open disputes</option>'
+      : openDisputes
+          .map((dispute) => `<option value="${dispute.disputeId}">${dispute.disputeId} · ${escapeHtml(dispute.reason)}</option>`)
+          .join('');
+  els.resolveDisputeForm.querySelector('button').disabled = !state.claim || openDisputes.length === 0;
 }
 
 function addLineItemRow(initial = { serviceCode: 'office_visit', description: 'Consultation', billedAmount: '120' }) {
@@ -706,6 +723,7 @@ function getClaimPayloadFromForm() {
       providerId: els.providerId.value.trim(),
       name: els.providerName.value.trim()
     },
+    dateOfService: els.submitDateOfService.value,
     diagnosisCodes: els.diagnosisCodes.value
       .split(',')
       .map((value) => value.trim())
@@ -749,9 +767,7 @@ async function selectMember(memberId) {
   state.policies = policiesResponse.items;
   state.policyEndpointData = Object.fromEntries(policyEndpointEntries);
   state.claims = claimsResponse.items;
-  state.availablePolicies = state.policies.filter(
-    (policy) => !state.claims.some((claim) => claim.policyId === policy.policyId)
-  );
+  state.availablePolicies = [...state.policies];
   state.disputeEndpointData = {};
   renderMemberList();
   renderMemberDetail();
@@ -970,6 +986,29 @@ els.disputeForm.addEventListener('submit', async (event) => {
       })
     });
     showToast('Dispute opened.');
+    await selectClaim(state.claim.claimId);
+  } catch (error) {
+    showToast(error.message, true);
+  }
+});
+
+els.resolveDisputeForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!state.claim || !els.resolveDisputeId.value) {
+    showToast('No open dispute selected.', true);
+    return;
+  }
+
+  try {
+    await api(`/api/v1/disputes/${els.resolveDisputeId.value}/resolution`, {
+      method: 'POST',
+      body: JSON.stringify({
+        outcome: els.resolveDisputeOutcome.value,
+        note: els.resolveDisputeNote.value.trim() || undefined
+      })
+    });
+    showToast('Dispute resolved.');
+    await selectMember(state.selectedMemberId);
     await selectClaim(state.claim.claimId);
   } catch (error) {
     showToast(error.message, true);

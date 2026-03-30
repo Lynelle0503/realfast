@@ -8,6 +8,7 @@ interface ClaimRow {
   policy_id: string;
   provider_id: string;
   provider_name: string;
+  date_of_service: string | null;
   diagnosis_codes_json: string;
   status: 'submitted' | 'under_review' | 'approved' | 'paid';
   approved_line_item_count: number;
@@ -66,6 +67,7 @@ export function mapClaimRow(
       providerId: row.provider_id,
       name: row.provider_name
     },
+    dateOfService: row.date_of_service,
     diagnosisCodes: parseJsonArray<string>(row.diagnosis_codes_json),
     status: row.status,
     approvedLineItemCount: row.approved_line_item_count,

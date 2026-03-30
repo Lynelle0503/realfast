@@ -10,10 +10,10 @@ export async function adjudicateClaimCommand(
     claimRepository: ClaimRepository;
     policyRepository: PolicyRepository;
     accumulatorRepository: AccumulatorRepository;
-    clock: Clock;
+    clock?: Clock;
   },
   claimId: string
-): Promise<{ claim: Claim; accumulatorEffects: Awaited<ReturnType<AccumulatorRepository['listByPolicyAndService']>> }> {
+): Promise<{ claim: Claim; accumulatorEffects: Awaited<ReturnType<AccumulatorRepository['listByPolicy']>> }> {
   const claim = await dependencies.claimRepository.getById(claimId);
   if (!claim) {
     throw new NotFoundError(`Claim ${claimId} was not found.`);
@@ -28,23 +28,19 @@ export async function adjudicateClaimCommand(
     throw new NotFoundError(`Policy ${claim.policyId} was not found.`);
   }
 
-  const serviceCodes = [...new Set(claim.lineItems.map((lineItem) => lineItem.serviceCode))];
+  const policyAccumulatorEntries = await dependencies.accumulatorRepository.listByPolicy(claim.policyId);
   const accumulatorEntriesByService = new Map<string, Awaited<ReturnType<AccumulatorRepository['listByPolicyAndService']>>>(
-    await Promise.all(
-      serviceCodes.map(
-        async (serviceCode): Promise<[string, Awaited<ReturnType<AccumulatorRepository['listByPolicyAndService']>>]> => [
-          serviceCode,
-          await dependencies.accumulatorRepository.listByPolicyAndService(claim.policyId, serviceCode)
-        ]
-      )
-    )
+    [...new Set(claim.lineItems.map((lineItem) => lineItem.serviceCode))].map((serviceCode) => [
+      serviceCode,
+      policyAccumulatorEntries.filter((entry) => entry.serviceCode === serviceCode)
+    ])
   );
 
   const result = adjudicateClaim({
     claim,
     policy,
     accumulatorEntriesByService,
-    asOfDate: dependencies.clock.now()
+    accumulatorEntriesForPolicy: policyAccumulatorEntries
   });
 
   const updatedClaim = applyClaimRollup({

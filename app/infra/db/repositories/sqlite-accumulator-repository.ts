@@ -10,7 +10,7 @@ interface AccumulatorRow {
   service_code: string;
   benefit_period_start: string;
   benefit_period_end: string;
-  metric_type: 'dollars_paid' | 'visits_used';
+  metric_type: 'dollars_paid' | 'visits_used' | 'member_oop_applied';
   delta: number;
   source: 'claim_line_item';
   source_id: string;
@@ -26,6 +26,29 @@ export class SqliteAccumulatorRepository implements AccumulatorRepository {
 
   async appendMany(entries: AccumulatorEntry[]): Promise<void> {
     this.insertEntries(entries);
+  }
+
+  async listByPolicy(policyId: string): Promise<AccumulatorEntry[]> {
+    const rows = this.db
+      .prepare(
+        `SELECT
+           member_id,
+           policy_id,
+           service_code,
+           benefit_period_start,
+           benefit_period_end,
+           metric_type,
+           delta,
+           source,
+           source_id,
+           status
+         FROM accumulator_entries
+         WHERE policy_id = ?
+         ORDER BY id`
+      )
+      .all(policyId) as AccumulatorRow[];
+
+    return rows.map(mapAccumulatorRow);
   }
 
   async listByPolicyAndService(policyId: string, serviceCode: string): Promise<AccumulatorEntry[]> {

@@ -10,7 +10,7 @@ export async function resolveManualReviewCommand(
     claimRepository: ClaimRepository;
     policyRepository: PolicyRepository;
     accumulatorRepository: AccumulatorRepository;
-    clock: Clock;
+    clock?: Clock;
   },
   input: { claimId: string; lineItemId: string; decision: 'approved' | 'denied' }
 ): Promise<{ claim: Claim }> {
@@ -33,18 +33,15 @@ export async function resolveManualReviewCommand(
     throw new NotFoundError(`Policy ${claim.policyId} was not found.`);
   }
 
-  const accumulatorEntries = await dependencies.accumulatorRepository.listByPolicyAndService(
-    claim.policyId,
-    lineItem.serviceCode
-  );
+  const policyAccumulatorEntries = await dependencies.accumulatorRepository.listByPolicy(claim.policyId);
 
   const result = resolveManualReviewDecision(
     claim,
     policy,
     input.lineItemId,
     input.decision,
-    new Map([[lineItem.serviceCode, accumulatorEntries]]),
-    dependencies.clock.now()
+    new Map([[lineItem.serviceCode, policyAccumulatorEntries.filter((entry) => entry.serviceCode === lineItem.serviceCode)]]),
+    policyAccumulatorEntries
   );
 
   const updatedClaim = applyClaimRollup({

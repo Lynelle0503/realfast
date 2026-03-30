@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS claims (
   policy_id TEXT NOT NULL,
   provider_id TEXT NOT NULL,
   provider_name TEXT NOT NULL,
+  date_of_service TEXT,
   diagnosis_codes_json TEXT NOT NULL,
   status TEXT NOT NULL,
   approved_line_item_count INTEGER NOT NULL DEFAULT 0,
@@ -76,6 +77,8 @@ CREATE TABLE IF NOT EXISTS disputes (
   reason TEXT NOT NULL,
   note TEXT,
   referenced_line_item_ids_json TEXT NOT NULL,
+  resolved_at TEXT,
+  resolution_note TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (claim_id) REFERENCES claims(id),
   FOREIGN KEY (member_id) REFERENCES members(id)

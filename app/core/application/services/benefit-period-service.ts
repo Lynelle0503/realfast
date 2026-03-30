@@ -3,15 +3,15 @@ export interface BenefitPeriodWindow {
   end: string;
 }
 
-function toUtcDate(date: Date): Date {
+export function toUtcDate(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
 
-function parseDate(dateString: string): Date {
+export function parseDate(dateString: string): Date {
   return toUtcDate(new Date(`${dateString}T00:00:00.000Z`));
 }
 
-function formatDate(date: Date): string {
+export function formatDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
@@ -28,11 +28,15 @@ function addDays(date: Date, days: number): Date {
 }
 
 export function getBenefitPeriodWindow(effectiveDate: string, asOfDate: Date): BenefitPeriodWindow {
+  return getBenefitPeriodWindowForDate(effectiveDate, formatDate(toUtcDate(asOfDate)));
+}
+
+export function getBenefitPeriodWindowForDate(effectiveDate: string, serviceDate: string): BenefitPeriodWindow {
   const effective = parseDate(effectiveDate);
-  const today = toUtcDate(asOfDate);
+  const dateOfService = parseDate(serviceDate);
 
   let start = effective;
-  while (addYears(start, 1) <= today) {
+  while (addYears(start, 1) <= dateOfService) {
     start = addYears(start, 1);
   }
 

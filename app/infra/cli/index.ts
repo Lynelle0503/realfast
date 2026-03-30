@@ -9,6 +9,7 @@ import { createMember } from '../../core/application/commands/create-member.js';
 import { createPolicy } from '../../core/application/commands/create-policy.js';
 import { markClaimPayment } from '../../core/application/commands/mark-claim-payment.js';
 import { openDispute } from '../../core/application/commands/open-dispute.js';
+import { resolveDisputeCommand } from '../../core/application/commands/resolve-dispute.js';
 import { resolveManualReviewCommand } from '../../core/application/commands/resolve-manual-review.js';
 import { ApplicationError } from '../../core/application/errors/application-error.js';
 import { BusinessRuleError } from '../../core/application/errors/business-rule-error.js';
@@ -21,7 +22,7 @@ import { listClaimDisputes } from '../../core/application/queries/list-claim-dis
 import { listMemberClaims } from '../../core/application/queries/list-member-claims.js';
 import { listMemberPolicies } from '../../core/application/queries/list-member-policies.js';
 import { getAccumulatorUsage } from '../../core/application/services/accumulator-service.js';
-import { getBenefitPeriodWindow } from '../../core/application/services/benefit-period-service.js';
+import { getBenefitPeriodWindow, getBenefitPeriodWindowForDate } from '../../core/application/services/benefit-period-service.js';
 import type { AccumulatorEntry } from '../../core/domain/accumulator.js';
 import type { Claim, LineDecision } from '../../core/domain/claim.js';
 import type { Dispute } from '../../core/domain/dispute.js';
@@ -47,6 +48,7 @@ interface ClaimFormattingContext {
   periodStart: string | null;
   periodEnd: string | null;
   accumulatorEntriesByService: Map<string, AccumulatorEntry[]>;
+  policyAccumulatorEntries: AccumulatorEntry[];
   disputes: Dispute[];
 }
 
@@ -166,9 +168,10 @@ function formatClaimDisputeExplanation(disputes: Dispute[]): string {
     return 'Dispute status: no disputes are currently open for this claim.';
   }
 
+  const openCount = disputes.filter((dispute) => dispute.status === 'open').length;
   return `Dispute status: ${disputes.length} dispute(s) exist for this claim (${disputes
-    .map((dispute) => dispute.disputeId)
-    .join(', ')}). In v1, disputes do not automatically change claim status.`;
+    .map((dispute) => `${dispute.disputeId}:${dispute.status}`)
+    .join(', ')}). ${openCount} dispute(s) are still open.`;
 }
 
 function formatLineDecisionExplanation(
@@ -183,7 +186,7 @@ function formatLineDecisionExplanation(
   const usage =
     context.periodStart && context.periodEnd
       ? getAccumulatorUsage(serviceEntries, context.periodStart, context.periodEnd)
-      : { usedDollars: 0, usedVisits: 0 };
+      : { usedDollars: 0, usedVisits: 0, memberOopApplied: 0 };
 
   lines.push(`  ${formatServiceRule(context.policy, lineItem.serviceCode)}`);
 
@@ -261,23 +264,19 @@ async function buildClaimFormattingContext(
   claim: Claim,
   dependencies: {
     policyRepository: { getById(policyId: string): Promise<Policy | null> };
-    accumulatorRepository: { listByPolicyAndService(policyId: string, serviceCode: string): Promise<AccumulatorEntry[]> };
+    accumulatorRepository: { listByPolicy(policyId: string): Promise<AccumulatorEntry[]> };
     disputeRepository: { listByClaimId(claimId: string): Promise<Dispute[]> };
-    clock: { now(): Date };
   }
 ): Promise<ClaimFormattingContext> {
   const policy = await dependencies.policyRepository.getById(claim.policyId);
-  const serviceCodes = [...new Set(claim.lineItems.map((lineItem) => lineItem.serviceCode))];
+  const policyAccumulatorEntries = await dependencies.accumulatorRepository.listByPolicy(claim.policyId);
   const accumulatorEntriesByService = new Map<string, AccumulatorEntry[]>();
-
-  await Promise.all(
-    serviceCodes.map(async (serviceCode) => {
+  [...new Set(claim.lineItems.map((lineItem) => lineItem.serviceCode))].forEach((serviceCode) => {
     accumulatorEntriesByService.set(
-        serviceCode,
-        await dependencies.accumulatorRepository.listByPolicyAndService(claim.policyId, serviceCode)
-      );
-    })
-  );
+      serviceCode,
+      policyAccumulatorEntries.filter((entry) => entry.serviceCode === serviceCode)
+    );
+  });
 
   const disputes = await dependencies.disputeRepository.listByClaimId(claim.claimId);
 
@@ -287,16 +286,18 @@ async function buildClaimFormattingContext(
       periodStart: null,
       periodEnd: null,
       accumulatorEntriesByService,
+      policyAccumulatorEntries,
       disputes
     };
   }
 
-  const period = getBenefitPeriodWindow(policy.effectiveDate, dependencies.clock.now());
+  const period = claim.dateOfService ? getBenefitPeriodWindowForDate(policy.effectiveDate, claim.dateOfService) : null;
   return {
     policy,
-    periodStart: period.start,
-    periodEnd: period.end,
+    periodStart: period?.start ?? null,
+    periodEnd: period?.end ?? null,
     accumulatorEntriesByService,
+    policyAccumulatorEntries,
     disputes
   };
 }
@@ -310,6 +311,7 @@ function formatClaim(claim: Claim, context: ClaimFormattingContext): string {
     `Approved line items: ${claim.approvedLineItemCount}`,
     `Member: ${claim.memberId}`,
     `Policy: ${claim.policyId}`,
+    `Service date: ${claim.dateOfService ?? 'missing'}`,
     `Provider: ${claim.provider.name} (${claim.provider.providerId})`,
     `Diagnosis codes: ${claim.diagnosisCodes.length > 0 ? claim.diagnosisCodes.join(', ') : 'none'}`,
     'Line items:'
@@ -360,6 +362,8 @@ function formatDispute(dispute: {
   reason: string;
   note: string | null;
   referencedLineItemIds: string[];
+  resolvedAt: string | null;
+  resolutionNote: string | null;
 }): string {
   return [
     `Dispute ${dispute.disputeId}`,
@@ -368,7 +372,9 @@ function formatDispute(dispute: {
     `Status: ${dispute.status}`,
     `Reason: ${dispute.reason}`,
     `Note: ${dispute.note ?? 'n/a'}`,
-    `Referenced line items: ${dispute.referencedLineItemIds.length > 0 ? dispute.referencedLineItemIds.join(', ') : 'none'}`
+    `Referenced line items: ${dispute.referencedLineItemIds.length > 0 ? dispute.referencedLineItemIds.join(', ') : 'none'}`,
+    `Resolved at: ${dispute.resolvedAt ?? 'n/a'}`,
+    `Resolution note: ${dispute.resolutionNote ?? 'n/a'}`
   ].join('\n');
 }
 
@@ -379,11 +385,15 @@ function summarizeAccumulatorEntries(entries: AccumulatorEntry[]): string {
   const visitTotal = entries
     .filter((entry) => entry.metricType === 'visits_used')
     .reduce((sum, entry) => sum + entry.delta, 0);
+  const memberOopTotal = entries
+    .filter((entry) => entry.metricType === 'member_oop_applied')
+    .reduce((sum, entry) => sum + entry.delta, 0);
 
   const lines = [
     `Accumulator entries: ${entries.length}`,
     `Total dollars paid usage: ${dollarTotal.toFixed(2)}`,
-    `Total visits used: ${visitTotal}`
+    `Total visits used: ${visitTotal}`,
+    `Total member out-of-pocket applied: ${memberOopTotal.toFixed(2)}`
   ];
 
   if (entries.length > 0) {
@@ -407,7 +417,9 @@ function formatAccumulatorSummaryForService(
 ): string {
   const serviceRule = policy?.coverageRules.serviceRules.find((rule) => rule.serviceCode === serviceCode);
   const usage =
-    periodStart && periodEnd ? getAccumulatorUsage(entries, periodStart, periodEnd) : { usedDollars: 0, usedVisits: 0 };
+    periodStart && periodEnd
+      ? getAccumulatorUsage(entries, periodStart, periodEnd)
+      : { usedDollars: 0, usedVisits: 0, memberOopApplied: 0 };
 
   const lines = [summarizeAccumulatorEntries(entries)];
 
@@ -534,6 +546,7 @@ function parseArguments(argv: string[]): ParsedArguments {
       'list policies',
       'list claims',
       'list disputes',
+      'resolve dispute',
       'submit claim',
       'adjudicate claim',
       'resolve manual-review',
@@ -580,12 +593,13 @@ function renderHelp(): string {
     '  list claims <memberId> [--db PATH]',
     '  list disputes <claimId> [--db PATH]',
     '  submit claim [--db PATH] --json FILE',
-    '  submit claim [--db PATH] --member-id ID --policy-id ID --provider-id ID --provider-name NAME [--diagnosis-code CODE]... --line-item "serviceCode|description|billedAmount" [--line-item ...]',
+    '  submit claim [--db PATH] --member-id ID --policy-id ID --provider-id ID --provider-name NAME --date-of-service YYYY-MM-DD [--diagnosis-code CODE]... --line-item "serviceCode|description|billedAmount" [--line-item ...]',
     '  adjudicate claim <claimId> [--db PATH]',
     '  resolve manual-review <claimId> <lineItemId> <approved|denied> [--db PATH]',
     '  pay claim <claimId> [--db PATH] --line-item-id ID [--line-item-id ...]',
     '  pay claim <claimId> [--db PATH] --all-approved',
     '  open dispute <claimId> [--db PATH] --reason TEXT [--note TEXT] [--line-item-id ID]...',
+    '  resolve dispute <disputeId> <upheld|overturned> [--db PATH] [--note TEXT]',
     '  show claim <claimId> [--db PATH]',
     '  help',
     '',
@@ -597,12 +611,13 @@ function renderHelp(): string {
     '  npm run cli -- list claims MEM-0001',
     '  npm run cli -- list policies MEM-0001',
     '  npm run cli -- submit claim --json ./claim.json',
-    '  npm run cli -- submit claim --member-id MEM-0001 --policy-id POL-0001 --provider-id PRV-9001 --provider-name "CityCare Clinic" --diagnosis-code J02.9 --line-item "office_visit|Primary care consultation|150"',
+    '  npm run cli -- submit claim --member-id MEM-0001 --policy-id POL-0001 --provider-id PRV-9001 --provider-name "CityCare Clinic" --date-of-service 2026-03-01 --diagnosis-code J02.9 --line-item "office_visit|Primary care consultation|150"',
     '  npm run cli -- adjudicate claim CLM-0001',
     '  npm run cli -- show accumulator POL-0001 office_visit',
     '  npm run cli -- resolve manual-review CLM-0001 LI-0005 approved',
     '  npm run cli -- pay claim CLM-0001 --all-approved',
     '  npm run cli -- open dispute CLM-0001 --reason "I disagree with the denial." --line-item-id LI-0004',
+    '  npm run cli -- resolve dispute DSP-0001 overturned --note "Manual approval after review."',
     '  npm run cli -- list disputes CLM-0001',
     '  npm run cli -- show dispute DSP-0001',
     '  npm run cli -- show claim CLM-0001'
@@ -639,6 +654,7 @@ function parseClaimRequestFromFlags(parsed: ParsedArguments) {
       providerId: requireFlagValue(parsed, 'provider-id', 'provider-id'),
       name: requireFlagValue(parsed, 'provider-name', 'provider-name')
     },
+    dateOfService: requireFlagValue(parsed, 'date-of-service', 'date-of-service'),
     diagnosisCodes: getFlagValues(parsed, 'diagnosis-code'),
     lineItems: getFlagValues(parsed, 'line-item').map(parseLineItemFlag)
   };
@@ -647,13 +663,14 @@ function parseClaimRequestFromFlags(parsed: ParsedArguments) {
 function parseClaimRequestFromJsonFile(filePath: string) {
   try {
     const content = readFileSync(filePath, 'utf8');
-    return JSON.parse(content) as {
-      memberId: string;
-      policyId: string;
-      provider: { providerId: string; name: string };
-      diagnosisCodes: string[];
-      lineItems: Array<{ serviceCode: string; description: string; billedAmount: number }>;
-    };
+      return JSON.parse(content) as {
+        memberId: string;
+        policyId: string;
+        provider: { providerId: string; name: string };
+        dateOfService: string;
+        diagnosisCodes: string[];
+        lineItems: Array<{ serviceCode: string; description: string; billedAmount: number }>;
+      };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     throw new ValidationError(`Unable to read claim JSON from ${filePath}: ${message}`);
@@ -853,8 +870,7 @@ export async function runCli(argv: string[], environment: CliEnvironment = proce
       const formattingContext = await buildClaimFormattingContext(claim, {
         policyRepository: context.policyRepository,
         accumulatorRepository: context.accumulatorRepository,
-        disputeRepository: context.disputeRepository,
-        clock: context.clock
+        disputeRepository: context.disputeRepository
       });
       writeLine(environment.stdout, `Created claim ${claim.claimId}.`);
       writeLine(environment.stdout, formatClaim(claim, formattingContext));
@@ -871,8 +887,7 @@ export async function runCli(argv: string[], environment: CliEnvironment = proce
         {
           claimRepository: context.claimRepository,
           policyRepository: context.policyRepository,
-          accumulatorRepository: context.accumulatorRepository,
-          clock: context.clock
+          accumulatorRepository: context.accumulatorRepository
         },
         claimId
       );
@@ -880,8 +895,7 @@ export async function runCli(argv: string[], environment: CliEnvironment = proce
       const formattingContext = await buildClaimFormattingContext(result.claim, {
         policyRepository: context.policyRepository,
         accumulatorRepository: context.accumulatorRepository,
-        disputeRepository: context.disputeRepository,
-        clock: context.clock
+        disputeRepository: context.disputeRepository
       });
       writeLine(environment.stdout, `Adjudicated claim ${claimId}.`);
       writeLine(environment.stdout, formatClaim(result.claim, formattingContext));
@@ -909,8 +923,7 @@ export async function runCli(argv: string[], environment: CliEnvironment = proce
         {
           claimRepository: context.claimRepository,
           policyRepository: context.policyRepository,
-          accumulatorRepository: context.accumulatorRepository,
-          clock: context.clock
+          accumulatorRepository: context.accumulatorRepository
         },
         { claimId, lineItemId, decision }
       );
@@ -918,8 +931,7 @@ export async function runCli(argv: string[], environment: CliEnvironment = proce
       const formattingContext = await buildClaimFormattingContext(result.claim, {
         policyRepository: context.policyRepository,
         accumulatorRepository: context.accumulatorRepository,
-        disputeRepository: context.disputeRepository,
-        clock: context.clock
+        disputeRepository: context.disputeRepository
       });
       writeLine(environment.stdout, `Resolved manual review for ${lineItemId} on claim ${claimId}.`);
       writeLine(environment.stdout, formatClaim(result.claim, formattingContext));
@@ -948,8 +960,7 @@ export async function runCli(argv: string[], environment: CliEnvironment = proce
       const formattingContext = await buildClaimFormattingContext(result.claim, {
         policyRepository: context.policyRepository,
         accumulatorRepository: context.accumulatorRepository,
-        disputeRepository: context.disputeRepository,
-        clock: context.clock
+        disputeRepository: context.disputeRepository
       });
       writeLine(environment.stdout, `Recorded payment for claim ${claimId}.`);
       writeLine(environment.stdout, formatClaim(result.claim, formattingContext));
@@ -1024,6 +1035,55 @@ export async function runCli(argv: string[], environment: CliEnvironment = proce
       return 0;
     }
 
+    if (parsed.commandKey === 'resolve dispute') {
+      const [disputeId, outcome] = parsed.positionals;
+      if (!disputeId || (outcome !== 'upheld' && outcome !== 'overturned')) {
+        throw new ValidationError('Usage: resolve dispute <disputeId> <upheld|overturned>');
+      }
+
+      const result = await resolveDisputeCommand(
+        {
+          claimRepository: context.claimRepository,
+          policyRepository: context.policyRepository,
+          disputeRepository: context.disputeRepository,
+          accumulatorRepository: context.accumulatorRepository,
+          clock: context.clock
+        },
+        (() => {
+          const input = {
+            disputeId,
+            outcome
+          } as const;
+          const note = getFlagValue(parsed, 'note');
+          return note === undefined ? input : { ...input, note };
+        })()
+      );
+
+      const formattingContext = await buildClaimFormattingContext(result.claim, {
+        policyRepository: context.policyRepository,
+        accumulatorRepository: context.accumulatorRepository,
+        disputeRepository: context.disputeRepository
+      });
+      writeLine(environment.stdout, `Resolved dispute ${disputeId} as ${outcome}.`);
+      writeLine(environment.stdout, formatDispute(result.dispute));
+      writeLine(environment.stdout);
+      writeLine(environment.stdout, formatClaim(result.claim, formattingContext));
+      if (result.accumulatorEffects.length > 0) {
+        writeLine(environment.stdout);
+        writeLine(
+          environment.stdout,
+          formatAccumulatorEffects(
+            formattingContext.policy,
+            formattingContext.periodStart,
+            formattingContext.periodEnd,
+            result.claim,
+            result.accumulatorEffects
+          )
+        );
+      }
+      return 0;
+    }
+
     if (parsed.commandKey === 'show dispute') {
       const disputeId = parsed.positionals[0];
       if (!disputeId) {
@@ -1062,8 +1122,7 @@ export async function runCli(argv: string[], environment: CliEnvironment = proce
       const formattingContext = await buildClaimFormattingContext(claim, {
         policyRepository: context.policyRepository,
         accumulatorRepository: context.accumulatorRepository,
-        disputeRepository: context.disputeRepository,
-        clock: context.clock
+        disputeRepository: context.disputeRepository
       });
       writeLine(environment.stdout, formatClaim(claim, formattingContext));
       return 0;

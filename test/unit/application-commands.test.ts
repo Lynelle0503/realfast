@@ -4,8 +4,8 @@ import { adjudicateClaimCommand } from '../../app/core/application/commands/adju
 import { createClaim } from '../../app/core/application/commands/create-claim.js';
 import { markClaimPayment } from '../../app/core/application/commands/mark-claim-payment.js';
 import { openDispute } from '../../app/core/application/commands/open-dispute.js';
+import { resolveDisputeCommand } from '../../app/core/application/commands/resolve-dispute.js';
 import { resolveManualReviewCommand } from '../../app/core/application/commands/resolve-manual-review.js';
-import { BusinessRuleError } from '../../app/core/application/errors/business-rule-error.js';
 import type { AccumulatorEntry } from '../../app/core/domain/accumulator.js';
 import type { Claim } from '../../app/core/domain/claim.js';
 import type { Dispute } from '../../app/core/domain/dispute.js';
@@ -97,6 +97,11 @@ class InMemoryDisputeRepository implements DisputeRepository {
     this.disputes.push(dispute);
   }
 
+  async update(dispute: Dispute): Promise<void> {
+    const index = this.disputes.findIndex((item) => item.disputeId === dispute.disputeId);
+    this.disputes[index] = dispute;
+  }
+
   async getById(disputeId: string): Promise<Dispute | null> {
     return this.disputes.find((dispute) => dispute.disputeId === disputeId) ?? null;
   }
@@ -115,6 +120,10 @@ class InMemoryAccumulatorRepository implements AccumulatorRepository {
 
   async appendMany(entries: AccumulatorEntry[]): Promise<void> {
     this.entries.push(...entries);
+  }
+
+  async listByPolicy(policyId: string): Promise<AccumulatorEntry[]> {
+    return this.entries.filter((entry) => entry.policyId === policyId);
   }
 
   async listByPolicyAndService(policyId: string, serviceCode: string): Promise<AccumulatorEntry[]> {
@@ -138,20 +147,19 @@ const policy: Policy = {
     deductible: 0,
     coinsurancePercent: 80,
     annualOutOfPocketMax: 3000,
-    serviceRules: [
-      { serviceCode: 'office_visit', covered: true, yearlyDollarCap: 1000, yearlyVisitCap: 10 }
-    ]
+    serviceRules: [{ serviceCode: 'office_visit', covered: true, yearlyDollarCap: 1000, yearlyVisitCap: 10 }]
   }
 };
 
 describe('application commands', () => {
-  it('rejects duplicate claims for the same member and policy', async () => {
+  it('allows multiple claims for the same member and policy', async () => {
     const claims: Claim[] = [
       {
         claimId: 'CLM-existing',
         memberId: 'MEM-1',
         policyId: 'POL-1',
         provider: { providerId: 'PRV-1', name: 'Provider' },
+        dateOfService: '2026-01-15',
         diagnosisCodes: ['J02.9'],
         status: 'submitted',
         approvedLineItemCount: 0,
@@ -160,23 +168,26 @@ describe('application commands', () => {
       }
     ];
 
-    await expect(
-      createClaim(
-        {
-          memberRepository: new InMemoryMemberRepository([member]),
-          policyRepository: new InMemoryPolicyRepository([policy]),
-          claimRepository: new InMemoryClaimRepository(claims),
-          idGenerator: new FakeIdGenerator()
-        },
-        {
-          memberId: 'MEM-1',
-          policyId: 'POL-1',
-          provider: { providerId: 'PRV-1', name: 'Provider' },
-          diagnosisCodes: ['J02.9'],
-          lineItems: [{ serviceCode: 'office_visit', description: 'Visit', billedAmount: 100 }]
-        }
-      )
-    ).rejects.toBeInstanceOf(BusinessRuleError);
+    const created = await createClaim(
+      {
+        memberRepository: new InMemoryMemberRepository([member]),
+        policyRepository: new InMemoryPolicyRepository([policy]),
+        claimRepository: new InMemoryClaimRepository(claims),
+        idGenerator: new FakeIdGenerator()
+      },
+      {
+        memberId: 'MEM-1',
+        policyId: 'POL-1',
+        provider: { providerId: 'PRV-1', name: 'Provider' },
+        dateOfService: '2026-02-01',
+        diagnosisCodes: ['J02.9'],
+        lineItems: [{ serviceCode: 'office_visit', description: 'Visit', billedAmount: 100 }]
+      }
+    );
+
+    expect(created.claimId).toBe('CLM-2');
+    expect(created.dateOfService).toBe('2026-02-01');
+    expect(claims).toHaveLength(2);
   });
 
   it('adjudicates a claim and marks it approved when all lines resolve', async () => {
@@ -186,6 +197,7 @@ describe('application commands', () => {
         memberId: 'MEM-1',
         policyId: 'POL-1',
         provider: { providerId: 'PRV-1', name: 'Provider' },
+        dateOfService: '2026-02-01',
         diagnosisCodes: ['J02.9'],
         status: 'submitted',
         approvedLineItemCount: 0,
@@ -208,6 +220,7 @@ describe('application commands', () => {
 
     expect(result.claim.status).toBe('approved');
     expect(result.claim.approvedLineItemCount).toBe(1);
+    expect(result.accumulatorEffects).toHaveLength(3);
   });
 
   it('resolves manual review lines and updates the claim status', async () => {
@@ -217,6 +230,7 @@ describe('application commands', () => {
         memberId: 'MEM-1',
         policyId: 'POL-1',
         provider: { providerId: 'PRV-1', name: 'Provider' },
+        dateOfService: '2026-02-01',
         diagnosisCodes: ['J02.9'],
         status: 'under_review',
         approvedLineItemCount: 0,
@@ -228,7 +242,7 @@ describe('application commands', () => {
             lineItemId: 'LI-1',
             decision: 'manual_review',
             reasonCode: 'MANUAL_REVIEW_REQUIRED',
-            reasonText: 'This service is still under review because it needs additional review before a final decision can be made.',
+            reasonText: 'Visit (office_visit) is still under review.',
             memberNextStep: null,
             payerAmount: null,
             memberResponsibility: null
@@ -258,6 +272,7 @@ describe('application commands', () => {
         memberId: 'MEM-1',
         policyId: 'POL-1',
         provider: { providerId: 'PRV-1', name: 'Provider' },
+        dateOfService: '2026-02-01',
         diagnosisCodes: ['J02.9'],
         status: 'approved',
         approvedLineItemCount: 1,
@@ -277,13 +292,14 @@ describe('application commands', () => {
     expect(result.claim.lineItems[0]?.status).toBe('paid');
   });
 
-  it('creates claim-level disputes', async () => {
+  it('creates disputes with open status and unresolved metadata', async () => {
     const claims: Claim[] = [
       {
         claimId: 'CLM-1',
         memberId: 'MEM-1',
         policyId: 'POL-1',
         provider: { providerId: 'PRV-1', name: 'Provider' },
+        dateOfService: '2026-02-01',
         diagnosisCodes: ['J02.9'],
         status: 'approved',
         approvedLineItemCount: 1,
@@ -308,5 +324,72 @@ describe('application commands', () => {
 
     expect(dispute.status).toBe('open');
     expect(dispute.referencedLineItemIds).toEqual(['LI-4']);
+    expect(dispute.resolvedAt).toBeNull();
+    expect(dispute.resolutionNote).toBeNull();
+  });
+
+  it('overturns a denied line through dispute resolution and updates the original claim', async () => {
+    const claims: Claim[] = [
+      {
+        claimId: 'CLM-1',
+        memberId: 'MEM-1',
+        policyId: 'POL-1',
+        provider: { providerId: 'PRV-1', name: 'Provider' },
+        dateOfService: '2026-02-01',
+        diagnosisCodes: ['J02.9'],
+        status: 'approved',
+        approvedLineItemCount: 0,
+        lineItems: [
+          { lineItemId: 'LI-1', serviceCode: 'office_visit', description: 'Visit', billedAmount: 100, status: 'denied' }
+        ],
+        lineDecisions: [
+          {
+            lineItemId: 'LI-1',
+            decision: 'denied',
+            reasonCode: 'SERVICE_NOT_COVERED',
+            reasonText: 'Visit was denied.',
+            memberNextStep: 'Dispute it.',
+            payerAmount: 0,
+            memberResponsibility: 100
+          }
+        ]
+      }
+    ];
+
+    const disputes: Dispute[] = [
+      {
+        disputeId: 'DSP-1',
+        claimId: 'CLM-1',
+        memberId: 'MEM-1',
+        status: 'open',
+        reason: 'Please reconsider',
+        note: null,
+        referencedLineItemIds: ['LI-1'],
+        resolvedAt: null,
+        resolutionNote: null
+      }
+    ];
+
+    const accumulatorRepository = new InMemoryAccumulatorRepository([]);
+    const result = await resolveDisputeCommand(
+      {
+        claimRepository: new InMemoryClaimRepository(claims),
+        policyRepository: new InMemoryPolicyRepository([policy]),
+        disputeRepository: new InMemoryDisputeRepository(disputes),
+        accumulatorRepository,
+        clock: new FakeClock()
+      },
+      {
+        disputeId: 'DSP-1',
+        outcome: 'overturned',
+        note: 'Manual approval after review.'
+      }
+    );
+
+    expect(result.dispute.status).toBe('overturned');
+    expect(result.dispute.resolvedAt).toBeTruthy();
+    expect(result.claim.lineItems[0]?.status).toBe('approved');
+    expect(result.claim.approvedLineItemCount).toBe(1);
+    expect(result.accumulatorEffects.map((entry) => entry.metricType)).toContain('member_oop_applied');
   });
 });

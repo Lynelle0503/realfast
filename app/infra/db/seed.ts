@@ -210,11 +210,35 @@ async function populateSeedData(db: Database.Database): Promise<void> {
     {
       memberId: member1.memberId,
       policyId: policy1.policyId,
+      serviceCode: 'office_visit',
+      benefitPeriodStart: '2026-01-01',
+      benefitPeriodEnd: '2026-12-31',
+      metricType: 'member_oop_applied',
+      delta: 5,
+      source: 'claim_line_item',
+      sourceId: 'HIST-LI-0001',
+      status: 'posted'
+    },
+    {
+      memberId: member1.memberId,
+      policyId: policy1.policyId,
       serviceCode: 'imaging',
       benefitPeriodStart: '2026-01-01',
       benefitPeriodEnd: '2026-12-31',
       metricType: 'dollars_paid',
       delta: 200,
+      source: 'claim_line_item',
+      sourceId: 'HIST-LI-0002',
+      status: 'posted'
+    },
+    {
+      memberId: member1.memberId,
+      policyId: policy1.policyId,
+      serviceCode: 'imaging',
+      benefitPeriodStart: '2026-01-01',
+      benefitPeriodEnd: '2026-12-31',
+      metricType: 'member_oop_applied',
+      delta: 50,
       source: 'claim_line_item',
       sourceId: 'HIST-LI-0002',
       status: 'posted'
@@ -239,6 +263,7 @@ async function populateSeedData(db: Database.Database): Promise<void> {
       memberId: member1.memberId,
       policyId: policy1.policyId,
       provider: { providerId: 'PRV-0501', name: 'CityCare Clinic' },
+      dateOfService: '2026-03-01',
       diagnosisCodes: ['J02.9'],
       lineItems: [
         { serviceCode: 'office_visit', description: 'Primary care consultation', billedAmount: 150 },
@@ -294,6 +319,7 @@ async function populateSeedData(db: Database.Database): Promise<void> {
       memberId: member2.memberId,
       policyId: policy2.policyId,
       provider: { providerId: 'PRV-0502', name: 'Northside Medical' },
+      dateOfService: '2026-03-01',
       diagnosisCodes: ['R50.9'],
       lineItems: [
         { serviceCode: 'office_visit', description: 'Urgent care visit', billedAmount: 120 },
@@ -322,6 +348,7 @@ async function populateSeedData(db: Database.Database): Promise<void> {
       memberId: member3.memberId,
       policyId: policy3.policyId,
       provider: { providerId: 'PRV-0503', name: 'Lakeside Rehab' },
+      dateOfService: '2026-03-01',
       diagnosisCodes: ['M54.5'],
       lineItems: [
         { serviceCode: 'office_visit', description: 'Initial specialist visit', billedAmount: 140 },

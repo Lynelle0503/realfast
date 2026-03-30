@@ -7,6 +7,7 @@ import { createMember } from '../../core/application/commands/create-member.js';
 import { createPolicy } from '../../core/application/commands/create-policy.js';
 import { markClaimPayment } from '../../core/application/commands/mark-claim-payment.js';
 import { openDispute } from '../../core/application/commands/open-dispute.js';
+import { resolveDisputeCommand } from '../../core/application/commands/resolve-dispute.js';
 import { resolveManualReviewCommand } from '../../core/application/commands/resolve-manual-review.js';
 import { ApplicationError } from '../../core/application/errors/application-error.js';
 import { BusinessRuleError } from '../../core/application/errors/business-rule-error.js';
@@ -22,7 +23,7 @@ import { listMemberClaims } from '../../core/application/queries/list-member-cla
 import { listMemberPolicies } from '../../core/application/queries/list-member-policies.js';
 import type { AccumulatorEntry } from '../../core/domain/accumulator.js';
 import type { Claim, CreateClaimInput, CreateClaimLineItemInput, LineDecision } from '../../core/domain/claim.js';
-import type { CreateDisputeInput, Dispute } from '../../core/domain/dispute.js';
+import type { CreateDisputeInput, Dispute, ResolveDisputeInput } from '../../core/domain/dispute.js';
 import type { CreateMemberInput, Member } from '../../core/domain/member.js';
 import type { CoverageRules, CreatePolicyInput, Policy } from '../../core/domain/policy.js';
 import type {
@@ -208,6 +209,7 @@ function parseCreateClaimRequest(body: unknown): CreateClaimInput {
       providerId: getString(provider.providerId, 'provider.providerId'),
       name: getString(provider.name, 'provider.name')
     },
+    dateOfService: getString(record.dateOfService, 'dateOfService'),
     diagnosisCodes: getStringArray(record.diagnosisCodes, 'diagnosisCodes'),
     lineItems: lineItems.map(parseCreateClaimLineItemRequest)
   };
@@ -244,6 +246,26 @@ function parseCreateDisputeRequest(claimId: string, body: unknown): CreateDisput
 
   if (record.referencedLineItemIds !== undefined) {
     input.referencedLineItemIds = getStringArray(record.referencedLineItemIds, 'referencedLineItemIds');
+  }
+
+  return input;
+}
+
+function parseResolveDisputeRequest(disputeId: string, body: unknown): ResolveDisputeInput {
+  const record = getObject(body, 'body');
+  const outcome = getString(record.outcome, 'outcome');
+  if (outcome !== 'upheld' && outcome !== 'overturned') {
+    throw new ValidationError('outcome must be upheld or overturned.');
+  }
+
+  const input: ResolveDisputeInput = {
+    disputeId,
+    outcome
+  };
+
+  const note = getOptionalString(record.note, 'note');
+  if (note !== undefined) {
+    input.note = note;
   }
 
   return input;
@@ -301,6 +323,7 @@ function mapClaim(claim: Claim): JsonValue {
       providerId: claim.provider.providerId,
       name: claim.provider.name
     },
+    dateOfService: claim.dateOfService,
     diagnosisCodes: claim.diagnosisCodes,
     status: claim.status,
     approvedLineItemCount: claim.approvedLineItemCount,
@@ -322,6 +345,7 @@ function mapClaimSummary(claim: Claim): JsonValue {
     claimId: claim.claimId,
     memberId: claim.memberId,
     policyId: claim.policyId,
+    dateOfService: claim.dateOfService,
     status: claim.status,
     approvedLineItemCount: claim.approvedLineItemCount
   };
@@ -335,7 +359,9 @@ function mapDispute(dispute: Dispute): JsonValue {
     status: dispute.status,
     reason: dispute.reason,
     note: dispute.note,
-    referencedLineItemIds: dispute.referencedLineItemIds
+    referencedLineItemIds: dispute.referencedLineItemIds,
+    resolvedAt: dispute.resolvedAt,
+    resolutionNote: dispute.resolutionNote
   };
   return dto;
 }
@@ -474,8 +500,7 @@ async function routeRequest(dependencies: ApiDependencies, request: IncomingMess
       {
         claimRepository: dependencies.claimRepository,
         policyRepository: dependencies.policyRepository,
-        accumulatorRepository: dependencies.accumulatorRepository,
-        clock: dependencies.clock
+        accumulatorRepository: dependencies.accumulatorRepository
       },
       resourceSegments[1]!
     );
@@ -497,8 +522,7 @@ async function routeRequest(dependencies: ApiDependencies, request: IncomingMess
       {
         claimRepository: dependencies.claimRepository,
         policyRepository: dependencies.policyRepository,
-        accumulatorRepository: dependencies.accumulatorRepository,
-        clock: dependencies.clock
+        accumulatorRepository: dependencies.accumulatorRepository
       },
       {
         claimId: resourceSegments[1]!,
@@ -547,6 +571,25 @@ async function routeRequest(dependencies: ApiDependencies, request: IncomingMess
   if (method === 'GET' && resourceSegments.length === 2 && resourceSegments[0] === 'disputes') {
     const dispute = await getDispute(dependencies.disputeRepository, resourceSegments[1]!);
     return json(200, mapDispute(dispute));
+  }
+
+  if (method === 'POST' && resourceSegments.length === 3 && resourceSegments[0] === 'disputes' && resourceSegments[2] === 'resolution') {
+    const result = await resolveDisputeCommand(
+      {
+        claimRepository: dependencies.claimRepository,
+        policyRepository: dependencies.policyRepository,
+        disputeRepository: dependencies.disputeRepository,
+        accumulatorRepository: dependencies.accumulatorRepository,
+        clock: dependencies.clock
+      },
+      parseResolveDisputeRequest(resourceSegments[1]!, await readJsonBody(request))
+    );
+
+    return json(200, {
+      dispute: mapDispute(result.dispute),
+      claim: mapClaim(result.claim),
+      accumulatorEffects: result.accumulatorEffects.map(mapAccumulatorEntry)
+    });
   }
 
   return null;

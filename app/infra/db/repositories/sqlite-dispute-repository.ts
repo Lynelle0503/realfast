@@ -13,6 +13,8 @@ interface DisputeRow {
   reason: string;
   note: string | null;
   referenced_line_item_ids_json: string;
+  resolved_at: string | null;
+  resolution_note: string | null;
 }
 
 export class SqliteDisputeRepository implements DisputeRepository {
@@ -28,7 +30,9 @@ export class SqliteDisputeRepository implements DisputeRepository {
            status,
            reason,
            note,
-           referenced_line_item_ids_json
+           referenced_line_item_ids_json,
+           resolved_at,
+           resolution_note
          ) VALUES (
            @id,
            @claim_id,
@@ -36,7 +40,9 @@ export class SqliteDisputeRepository implements DisputeRepository {
            @status,
            @reason,
            @note,
-           @referenced_line_item_ids_json
+           @referenced_line_item_ids_json,
+           @resolved_at,
+           @resolution_note
          )`
       )
       .run({
@@ -46,14 +52,39 @@ export class SqliteDisputeRepository implements DisputeRepository {
         status: dispute.status,
         reason: dispute.reason,
         note: dispute.note,
-        referenced_line_item_ids_json: stringifyJson(dispute.referencedLineItemIds)
+        referenced_line_item_ids_json: stringifyJson(dispute.referencedLineItemIds),
+        resolved_at: dispute.resolvedAt,
+        resolution_note: dispute.resolutionNote
+      });
+  }
+
+  async update(dispute: Dispute): Promise<void> {
+    this.db
+      .prepare(
+        `UPDATE disputes
+         SET status = @status,
+             reason = @reason,
+             note = @note,
+             referenced_line_item_ids_json = @referenced_line_item_ids_json,
+             resolved_at = @resolved_at,
+             resolution_note = @resolution_note
+         WHERE id = @id`
+      )
+      .run({
+        id: dispute.disputeId,
+        status: dispute.status,
+        reason: dispute.reason,
+        note: dispute.note,
+        referenced_line_item_ids_json: stringifyJson(dispute.referencedLineItemIds),
+        resolved_at: dispute.resolvedAt,
+        resolution_note: dispute.resolutionNote
       });
   }
 
   async getById(disputeId: string): Promise<Dispute | null> {
     const row = this.db
       .prepare(
-        `SELECT id, claim_id, member_id, status, reason, note, referenced_line_item_ids_json
+        `SELECT id, claim_id, member_id, status, reason, note, referenced_line_item_ids_json, resolved_at, resolution_note
          FROM disputes
          WHERE id = ?`
       )
@@ -65,7 +96,7 @@ export class SqliteDisputeRepository implements DisputeRepository {
   async listByClaimId(claimId: string): Promise<Dispute[]> {
     const rows = this.db
       .prepare(
-        `SELECT id, claim_id, member_id, status, reason, note, referenced_line_item_ids_json
+        `SELECT id, claim_id, member_id, status, reason, note, referenced_line_item_ids_json, resolved_at, resolution_note
          FROM disputes
          WHERE claim_id = ?
          ORDER BY id`

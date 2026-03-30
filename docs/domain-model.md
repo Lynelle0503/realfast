@@ -106,7 +106,7 @@ Fields:
 Notes:
 
 - Only `policy_year` is supported for `benefitPeriod` in v1.
-- `annualOutOfPocketMax` is modeled but not currently enforced during adjudication.
+- `annualOutOfPocketMax` is enforced against `member_oop_applied` usage in the same policy year.
 - Deductible and coinsurance are policy-level defaults for all services in v1.
 
 ### Service Rule
@@ -136,6 +136,7 @@ Fields:
 - `memberId`
 - `policyId`
 - `provider`
+- `dateOfService`
 - `diagnosisCodes`
 - `status`
 - `approvedLineItemCount`
@@ -153,6 +154,7 @@ Example:
     "providerId": "PRV-9001",
     "name": "Downtown Clinic"
   },
+  "dateOfService": "2026-03-01",
   "diagnosisCodes": ["J02.9"],
   "status": "submitted",
   "approvedLineItemCount": 0,
@@ -183,7 +185,7 @@ Fields:
 
 Important v1 note:
 
-- There is no service-date field on the claim or line item yet.
+- `dateOfService` is modeled at the claim level, not per line item.
 
 ### Line Decision
 
@@ -206,7 +208,7 @@ Example:
   "lineItemId": "LI-0002",
   "decision": "denied",
   "reasonCode": "YEARLY_CAP_EXCEEDED",
-  "reasonText": "This service was denied because you have already used the yearly coverage limit allowed by your policy.",
+  "reasonText": "Follow-up lab panel (lab_test) was denied because you have already used the yearly dollar coverage limit allowed by your policy. Policy cap: 500.00 for this benefit period.",
   "memberNextStep": "You can dispute this decision if you believe the limit was applied incorrectly.",
   "payerAmount": 0,
   "memberResponsibility": 80
@@ -230,15 +232,17 @@ Fields:
 - `sourceId`
 - `status`
 
-Two metrics are used:
+Three metrics are used:
 
 - `dollars_paid`
 - `visits_used`
+- `member_oop_applied`
 
 Current behavior:
 
 - Dollar usage accumulates based on insurer-paid amount.
 - Visit usage increments by `1` for each approved covered line.
+- Member out-of-pocket usage accumulates across services for policy-year out-of-pocket max checks.
 - Only approved lines generate accumulator entries.
 - The enum supports `posted` and `reversed`, but v1 currently only posts entries.
 
@@ -255,10 +259,8 @@ Fields:
 - `reason`
 - `note`
 - `referencedLineItemIds`
-
-Current v1 note:
-
-- Only `open` disputes are modeled today.
+- `resolvedAt`
+- `resolutionNote`
 
 ## Relationships
 
@@ -269,13 +271,9 @@ Current v1 note:
 - One claim belongs to one member and one policy.
 - One claim has many claim line items.
 - One claim has zero or more line decisions.
-- One approved line item produces two accumulator entries in the current implementation:
-  one for `dollars_paid` and one for `visits_used`.
+- One approved line item produces three accumulator entries in the current implementation:
+  `dollars_paid`, `visits_used`, and `member_oop_applied`.
 - One claim can have zero or more disputes.
-
-Important implementation-specific rule:
-
-- The current command layer only allows one claim per member per policy at a time. This is a deliberate v1 simplification, not a domain truth I would keep in a production system.
 
 ## Adjudication Model
 
@@ -289,6 +287,14 @@ The adjudication service processes each submitted line item in order.
 
 - Deny the line with `SERVICE_NOT_COVERED`.
 
+### If Required Claim Data Is Missing
+
+- Deny the line with `MISSING_INFORMATION`.
+
+### If The Policy Is Not Active For The Service Date
+
+- Deny the line with `POLICY_NOT_ACTIVE`.
+
 ### If Visit Cap Is Exhausted
 
 - Deny the line with `VISIT_CAP_EXCEEDED`.
@@ -298,7 +304,8 @@ The adjudication service processes each submitted line item in order.
 1. Treat `billedAmount` as the allowed amount.
 2. Apply remaining policy deductible.
 3. Apply policy coinsurance to the covered amount.
-4. Check the yearly dollar cap for that service.
+4. Apply any remaining annual out-of-pocket max by reducing member responsibility.
+5. Check the yearly dollar cap for that service.
 
 Outcomes:
 
@@ -325,12 +332,12 @@ Rules:
 
 - Only `policy_year` is supported.
 - The benefit period resets on the effective-date anniversary.
-- The current implementation computes the active period using adjudication time, not date of service.
+- The active period is computed from claim `dateOfService`.
 
 Example:
 
 - Policy effective date: `2026-02-01`
-- Adjudication date: `2026-03-30`
+- Claim service date: `2026-03-30`
 - Benefit period: `2026-02-01` through `2027-01-31`
 
 ## State Machines
@@ -393,8 +400,7 @@ The normalized reason catalog currently includes:
 
 Current implementation note:
 
-- The adjudicator actively emits `SERVICE_NOT_COVERED`, `YEARLY_CAP_EXCEEDED`, `VISIT_CAP_EXCEEDED`, and `MANUAL_REVIEW_REQUIRED`.
-- `MISSING_INFORMATION` and `POLICY_NOT_ACTIVE` are defined for future use but are not currently produced by the adjudication service because the model does not yet contain the required input fields.
+- The adjudicator emits all six current reason codes when the claim data or benefit usage warrants them.
 
 ## Process Flow Example
 
@@ -405,6 +411,7 @@ Current implementation note:
 5. If any line is routed to `manual_review`, resolve it explicitly.
 6. Mark approved lines as paid.
 7. Optionally open a dispute against denied lines.
+8. Optionally resolve the dispute as `upheld` or `overturned`.
 
 That flow is available through:
 

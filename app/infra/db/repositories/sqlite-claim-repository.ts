@@ -11,6 +11,7 @@ interface ClaimRow {
   policy_id: string;
   provider_id: string;
   provider_name: string;
+  date_of_service: string | null;
   diagnosis_codes_json: string;
   status: 'submitted' | 'under_review' | 'approved' | 'paid';
   approved_line_item_count: number;
@@ -55,6 +56,7 @@ export class SqliteClaimRepository implements ClaimRepository {
           `UPDATE claims
            SET provider_id = @provider_id,
                provider_name = @provider_name,
+               date_of_service = @date_of_service,
                diagnosis_codes_json = @diagnosis_codes_json,
                status = @status,
                approved_line_item_count = @approved_line_item_count,
@@ -65,6 +67,7 @@ export class SqliteClaimRepository implements ClaimRepository {
           id: value.claimId,
           provider_id: value.provider.providerId,
           provider_name: value.provider.name,
+          date_of_service: value.dateOfService,
           diagnosis_codes_json: stringifyJson(value.diagnosisCodes),
           status: value.status,
           approved_line_item_count: value.approvedLineItemCount
@@ -114,6 +117,7 @@ export class SqliteClaimRepository implements ClaimRepository {
            policy_id,
            provider_id,
            provider_name,
+           date_of_service,
            diagnosis_codes_json,
            status,
            approved_line_item_count
@@ -138,6 +142,7 @@ export class SqliteClaimRepository implements ClaimRepository {
            policy_id,
            provider_id,
            provider_name,
+           date_of_service,
            diagnosis_codes_json,
            status,
            approved_line_item_count
@@ -159,6 +164,7 @@ export class SqliteClaimRepository implements ClaimRepository {
            policy_id,
            provider_id,
            provider_name,
+           date_of_service,
            diagnosis_codes_json,
            status,
            approved_line_item_count
@@ -168,6 +174,7 @@ export class SqliteClaimRepository implements ClaimRepository {
            @policy_id,
            @provider_id,
            @provider_name,
+           @date_of_service,
            @diagnosis_codes_json,
            @status,
            @approved_line_item_count
@@ -179,6 +186,7 @@ export class SqliteClaimRepository implements ClaimRepository {
         policy_id: claim.policyId,
         provider_id: claim.provider.providerId,
         provider_name: claim.provider.name,
+        date_of_service: claim.dateOfService,
         diagnosis_codes_json: stringifyJson(claim.diagnosisCodes),
         status: claim.status,
         approved_line_item_count: claim.approvedLineItemCount

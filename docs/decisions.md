@@ -11,7 +11,7 @@ This document explains what was built, what was intentionally left out of v1, an
 - Claims with multiple line items.
 - Line-level decisions with normalized reason codes and member-facing text.
 - Coverage accumulators stored as ledger entries.
-- Claim-level disputes with optional references to denied line items.
+- Claim-level disputes with optional references to denied line items and a minimal resolution workflow.
 
 ### Core Workflow
 
@@ -20,6 +20,7 @@ This document explains what was built, what was intentionally left out of v1, an
 - Manual-review routing for partial-payment edge cases.
 - Explicit manual-review resolution.
 - Line-item payment recording.
+- Dispute resolution as `upheld` or `overturned`.
 - Claim status rollup based on line-item states.
 
 ### Delivery Surfaces
@@ -107,18 +108,6 @@ Trade-off:
 
 These are deliberate v1 constraints.
 
-### Simplification: One Claim Per Member Per Policy
-
-The current `createClaim` command prevents a second claim from being created for the same member-policy pair.
-
-Why:
-
-- It simplified the first workflow and the demo UI.
-
-Cost:
-
-- It is unrealistic for a real claims system and should be removed in a follow-up version.
-
 ### Simplification: Billed Amount Equals Allowed Amount
 
 The adjudicator uses `billedAmount` as the allowed amount for v1.
@@ -131,40 +120,37 @@ Cost:
 
 - It skips an important real-world adjudication step.
 
-### Simplification: No Service Dates
+### Simplification: Claim-Level Service Date Only
 
-Claims and claim lines do not currently store service dates.
-
-Why:
-
-- Reduced the number of required inputs for the first version.
-
-Cost:
-
-- The system cannot truly evaluate policy-active-at-service-time logic.
-- Benefit periods are computed using adjudication time rather than service date.
-
-### Simplification: Disputes Are Capture-Only
-
-The system can open and view disputes, but it does not resolve them or reopen claims automatically.
+The system now stores `dateOfService` at the claim level and uses it for policy-active checks and policy-year benefit periods.
 
 Why:
 
-- The prompt only required that members can dispute decisions, not that appeals be fully implemented.
+- It closes the largest adjudication gap without introducing per-line date overrides.
 
 Cost:
 
-- The workflow ends at dispute creation instead of continuing into appeals adjudication.
+- Mixed-date claims still are not modeled; every line on a claim shares one service date.
+
+### Simplification: Minimal Dispute Resolution
+
+The system now supports `open -> upheld` and `open -> overturned`.
+
+Why:
+
+- It turns disputes into an actual workflow while staying small enough for a take-home assignment.
+
+Cost:
+
+- There is still no appeals queue, no reviewer identity, and no payment clawback flow.
 
 ## What I Did Not Build
 
-- Appeals workflow beyond opening a dispute.
 - Eligibility verification.
-- Service-date-aware adjudication.
 - Out-of-network or provider contract logic.
 - Allowed amount pricing.
 - Prior authorization or medical necessity review.
-- Automatic accumulator reversals.
+- Automatic accumulator reversals for already-posted paid lines.
 - Authentication and authorization.
 - Background jobs or asynchronous workflow orchestration.
 - Full CRUD administration for policies, claims, and disputes.
@@ -176,6 +162,7 @@ Cost:
 - Only `policy_year` benefit periods exist.
 - Yearly dollar cap usage accumulates against insurer-paid dollars.
 - Visit cap usage increments by one per approved covered line.
+- Member out-of-pocket usage is tracked with `member_oop_applied`.
 - Claim adjudication is explicit and does not happen automatically on claim creation.
 - The local UI is a demo operator surface, not a production-grade frontend.
 
@@ -183,22 +170,13 @@ Cost:
 
 These are the places where the current model is ahead of the actual adjudicator.
 
-### `annualOutOfPocketMax` Is Modeled But Not Enforced
+### Deductible Tracking Is Still Claim-Local
 
-Policies store `annualOutOfPocketMax`, but the current adjudication service does not apply it.
+The system now allows repeated claims on the same policy and correctly accumulates caps and out-of-pocket usage across the policy year, but deductible history is still inferred from the current claim rather than tracked through its own cross-claim ledger metric.
 
-### Some Reason Codes Are Defined But Not Produced
+### Dispute Overturn Is Intentionally Narrow
 
-The reason catalog includes:
-
-- `MISSING_INFORMATION`
-- `POLICY_NOT_ACTIVE`
-
-However, the current claim model does not yet provide the fields necessary to produce those decisions during adjudication.
-
-### Explanation Text Is Normalized More Than Personalized
-
-The system stores normalized reason text and next-step text, but the persisted decision record does not yet inject dynamic service names or exact policy cap values into the stored explanation.
+Overturning a dispute requires referenced denied line items and auto-approves those line items on the original claim. That is enough for the assignment and the next-round extension path, but it is not a full appeals subsystem.
 
 ## Why This Shape Still Works For The Assignment
 
@@ -206,8 +184,8 @@ The assignment emphasized domain decomposition, rule representation, state manag
 
 - modeling a clear domain with explicit states
 - implementing real adjudication behavior, not just static CRUD
-- handling mixed claim outcomes and manual-review routing
-- explaining denials with normalized codes and member-facing text
+- handling mixed claim outcomes, service-date validation, manual-review routing, and dispute resolution
+- explaining denials with normalized codes plus stored member-facing text that now includes service and cap context
 - exposing the workflow through multiple surfaces and tests
 
 It is intentionally a strong v1, not a complete insurance core system.

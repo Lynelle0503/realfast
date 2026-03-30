@@ -31,7 +31,7 @@ describe('sqlite seed', () => {
       policies: 5,
       claims: 3,
       disputes: 1,
-      accumulatorEntries: 18
+      accumulatorEntries: 27
     });
 
     const db = openDatabase({ filePath });

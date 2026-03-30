@@ -95,15 +95,13 @@ describe('cli', () => {
       'Status explanation: under_review because line item(s) LI-0005 are still in manual_review.'
     );
     expect(stdout.output).toContain(
-      'Dispute status: 1 dispute(s) exist for this claim (DSP-0001). In v1, disputes do not automatically change claim status.'
+      'Dispute status: 1 dispute(s) exist for this claim (DSP-0001:open). 1 dispute(s) are still open.'
     );
     expect(stdout.output).toContain('Approved line items: 3');
-    expect(stdout.output).toContain('Reason: This service is not covered under your policy.');
+    expect(stdout.output).toContain('Reason: Antibiotic prescription (prescription) was denied because this service is not covered under your policy.');
     expect(stdout.output).toContain('Service rule: covered=false');
     expect(stdout.output).toContain('Why this line was denied: the matched service rule is not covered under this policy.');
-    expect(stdout.output).toContain(
-      'Reason: This service is still under review because it needs additional review before a final decision can be made.'
-    );
+    expect(stdout.output).toContain('Reason: Follow-up office visit (office_visit) is still under review.');
     expect(stdout.output).toContain('Manual review detail: automatic adjudication would have paid 80.00');
 
     stdout = createMemoryStream();
@@ -153,6 +151,20 @@ describe('cli', () => {
     expect(exitCode).toBe(0);
     expect(stdout.output).toContain('Dispute DSP-0002');
     expect(stdout.output).toContain('Reason: Please review this denial.');
+    expect(stdout.output).toContain('Resolved at: n/a');
+
+    stdout = createMemoryStream();
+    stderr = createMemoryStream();
+    exitCode = await runCli(['resolve', 'dispute', 'DSP-0002', 'overturned', '--db', dbPath, '--note', 'Approved after review'], {
+      stdout,
+      stderr
+    });
+    expect(exitCode).toBe(0);
+    expect(stdout.output).toContain('Resolved dispute DSP-0002 as overturned.');
+    expect(stdout.output).toContain('Status: overturned');
+    expect(stdout.output).toContain('Resolution note: Approved after review');
+    expect(stdout.output).toContain('Claim CLM-0001');
+    expect(stdout.output).toContain('Approved line items: 5');
 
     stdout = createMemoryStream();
     stderr = createMemoryStream();
@@ -161,6 +173,7 @@ describe('cli', () => {
     expect(stdout.output).toContain('Accumulator for policy POL-0001 service office_visit');
     expect(stdout.output).toContain('Total dollars paid usage: 180.00');
     expect(stdout.output).toContain('Total visits used: 3');
+    expect(stdout.output).toContain('Total member out-of-pocket applied: 55.00');
     expect(stdout.output).toContain('Service rule summary: covered=true, yearlyDollarCap=180, yearlyVisitCap=10');
     expect(stdout.output).toContain('Remaining yearly dollar benefit: 0.00');
     expect(stdout.output).toContain('Remaining yearly visit benefit: 7');
@@ -219,6 +232,7 @@ describe('cli', () => {
         memberId: 'MEM-0001',
         policyId: 'POL-0001',
         provider: { providerId: 'PRV-7777', name: 'Northside Medical' },
+        dateOfService: '2026-03-01',
         diagnosisCodes: ['R50.9'],
         lineItems: [{ serviceCode: 'office_visit', description: 'Urgent care visit', billedAmount: 125 }]
       })
@@ -231,6 +245,7 @@ describe('cli', () => {
     expect(stdout.output).toContain('Created claim CLM-0001.');
     expect(stdout.output).toContain('Status: submitted');
     expect(stdout.output).toContain('Status explanation: submitted because adjudication has not started yet.');
+    expect(stdout.output).toContain('Service date: 2026-03-01');
 
     stdout = createMemoryStream();
     stderr = createMemoryStream();
@@ -242,6 +257,7 @@ describe('cli', () => {
     expect(stdout.output).toContain('Service: office_visit');
     expect(stdout.output).toContain('Total dollars paid usage: 100.00');
     expect(stdout.output).toContain('Total visits used: 1');
+    expect(stdout.output).toContain('Total member out-of-pocket applied: 25.00');
     expect(stdout.output).toContain('Remaining yearly dollar benefit: 900.00');
 
     stdout = createMemoryStream();
@@ -260,6 +276,8 @@ describe('cli', () => {
         'PRV-9999',
         '--provider-name',
         'Downtown Clinic',
+        '--date-of-service',
+        '2026-03-15',
         '--diagnosis-code',
         'J01.9',
         '--line-item',
@@ -267,7 +285,8 @@ describe('cli', () => {
       ],
       { stdout, stderr }
     );
-    expect(exitCode).toBe(1);
-    expect(stderr.output).toContain('Only one claim is allowed for a member on a particular policy.');
+    expect(exitCode).toBe(0);
+    expect(stdout.output).toContain('Created claim CLM-0002.');
+    expect(stdout.output).toContain('Service date: 2026-03-15');
   });
 });

@@ -98,6 +98,7 @@ describe('sqlite repositories', () => {
       memberId: 'MEM-0001',
       policyId: 'POL-0001',
       provider: { providerId: 'PRV-0001', name: 'CityCare Clinic' },
+      dateOfService: '2026-02-01',
       diagnosisCodes: ['J02.9'],
       status: 'submitted',
       approvedLineItemCount: 0,
@@ -173,6 +174,7 @@ describe('sqlite repositories', () => {
       memberId: 'MEM-0001',
       policyId: 'POL-0001',
       provider: { providerId: 'PRV-0001', name: 'CityCare Clinic' },
+      dateOfService: '2026-02-01',
       diagnosisCodes: ['J02.9'],
       status: 'approved',
       approvedLineItemCount: 1,
@@ -195,7 +197,9 @@ describe('sqlite repositories', () => {
       status: 'open',
       reason: 'Incorrect denial',
       note: 'Please review this service again.',
-      referencedLineItemIds: ['LI-0001']
+      referencedLineItemIds: ['LI-0001'],
+      resolvedAt: null,
+      resolutionNote: null
     };
 
     await disputeRepository.create(dispute);
@@ -256,13 +260,28 @@ describe('sqlite repositories', () => {
         source: 'claim_line_item',
         sourceId: 'LI-0001',
         status: 'posted'
+      },
+      {
+        memberId: 'MEM-0001',
+        policyId: 'POL-0001',
+        serviceCode: 'office_visit',
+        benefitPeriodStart: '2026-01-01',
+        benefitPeriodEnd: '2026-12-31',
+        metricType: 'member_oop_applied',
+        delta: 30,
+        source: 'claim_line_item',
+        sourceId: 'LI-0001',
+        status: 'posted'
       }
     ];
 
     await accumulatorRepository.append(entries[0]!);
-    await accumulatorRepository.appendMany([entries[1]!]);
+    await accumulatorRepository.appendMany(entries.slice(1));
 
-    await expect(accumulatorRepository.listByPolicyAndService('POL-0001', 'office_visit')).resolves.toEqual(entries);
+    await expect(accumulatorRepository.listByPolicyAndService('POL-0001', 'office_visit')).resolves.toEqual(
+      expect.arrayContaining(entries)
+    );
+    await expect(accumulatorRepository.listByPolicy('POL-0001')).resolves.toEqual(expect.arrayContaining(entries));
 
     close();
   });

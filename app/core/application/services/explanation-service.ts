@@ -27,3 +27,95 @@ export function getReasonText(reasonCode: ReasonCode): string {
 export function getMemberNextStep(reasonCode: ReasonCode): string | null {
   return NEXT_STEP_TEXT[reasonCode] ?? null;
 }
+
+export interface DecisionExplanationContext {
+  reasonCode: ReasonCode;
+  lineItemDescription: string;
+  serviceCode: string;
+  serviceDate?: string | null;
+  policyEffectiveDate?: string;
+  yearlyDollarCap?: number | null;
+  yearlyVisitCap?: number | null;
+  remainingDollarCap?: number | null;
+  remainingVisitCap?: number | null;
+  missingFieldLabel?: string;
+  standardPayerAmount?: number | null;
+}
+
+function formatMoney(value: number): string {
+  return value.toFixed(2);
+}
+
+function withNextStep(reasonCode: ReasonCode, text: string): { reasonText: string; memberNextStep: string | null } {
+  return {
+    reasonText: text,
+    memberNextStep: getMemberNextStep(reasonCode)
+  };
+}
+
+export function buildDecisionExplanation(
+  context: DecisionExplanationContext
+): { reasonText: string; memberNextStep: string | null } {
+  const label = `${context.lineItemDescription} (${context.serviceCode})`;
+
+  switch (context.reasonCode) {
+    case 'SERVICE_NOT_COVERED':
+      return withNextStep(
+        context.reasonCode,
+        `${label} was denied because this service is not covered under your policy.`
+      );
+    case 'YEARLY_CAP_EXCEEDED': {
+      const capText =
+        context.yearlyDollarCap !== null && context.yearlyDollarCap !== undefined
+          ? ` Policy cap: ${formatMoney(context.yearlyDollarCap)} for this benefit period.`
+          : '';
+      return withNextStep(
+        context.reasonCode,
+        `${label} was denied because you have already used the yearly dollar coverage limit allowed by your policy.${capText}`
+      );
+    }
+    case 'VISIT_CAP_EXCEEDED': {
+      const capText =
+        context.yearlyVisitCap !== null && context.yearlyVisitCap !== undefined
+          ? ` Policy visit cap: ${context.yearlyVisitCap} visit(s) for this benefit period.`
+          : '';
+      return withNextStep(
+        context.reasonCode,
+        `${label} was denied because you have already used the number of visits allowed by your policy for this benefit period.${capText}`
+      );
+    }
+    case 'MISSING_INFORMATION': {
+      const fieldLabel = context.missingFieldLabel ?? 'required claim information';
+      return withNextStep(
+        context.reasonCode,
+        `${label} could not be processed because the claim is missing ${fieldLabel}.`
+      );
+    }
+    case 'POLICY_NOT_ACTIVE': {
+      const serviceDateText = context.serviceDate ? ` on ${context.serviceDate}` : '';
+      const effectiveDateText = context.policyEffectiveDate
+        ? ` The policy effective date is ${context.policyEffectiveDate}.`
+        : '';
+      return withNextStep(
+        context.reasonCode,
+        `${label} was denied because the policy was not active for the service date${serviceDateText}.${effectiveDateText}`
+      );
+    }
+    case 'MANUAL_REVIEW_REQUIRED': {
+      const payerText =
+        context.standardPayerAmount !== null && context.standardPayerAmount !== undefined
+          ? ` Automatic adjudication would have paid ${formatMoney(context.standardPayerAmount)}`
+          : ' Automatic adjudication would have paid more than the remaining benefit amount';
+      const remainingText =
+        context.remainingDollarCap !== null && context.remainingDollarCap !== undefined
+          ? `, but only ${formatMoney(Math.max(0, context.remainingDollarCap))} remains under the yearly dollar cap.`
+          : '.';
+      return {
+        reasonText: `${label} is still under review.${payerText}${remainingText}`,
+        memberNextStep: null
+      };
+    }
+    default:
+      return withNextStep(context.reasonCode, getReasonText(context.reasonCode));
+  }
+}

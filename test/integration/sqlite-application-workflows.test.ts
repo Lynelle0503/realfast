@@ -6,6 +6,7 @@ import { createMember } from '../../app/core/application/commands/create-member.
 import { createPolicy } from '../../app/core/application/commands/create-policy.js';
 import { markClaimPayment } from '../../app/core/application/commands/mark-claim-payment.js';
 import { openDispute } from '../../app/core/application/commands/open-dispute.js';
+import { resolveDisputeCommand } from '../../app/core/application/commands/resolve-dispute.js';
 import { resolveManualReviewCommand } from '../../app/core/application/commands/resolve-manual-review.js';
 import { getClaim } from '../../app/core/application/queries/get-claim.js';
 import { listClaimDisputes } from '../../app/core/application/queries/list-claim-disputes.js';
@@ -91,6 +92,18 @@ describe('sqlite application workflows', () => {
         source: 'claim_line_item',
         sourceId: 'HIST-LI-0001',
         status: 'posted'
+      },
+      {
+        memberId: member.memberId,
+        policyId: policy.policyId,
+        serviceCode: 'lab_test',
+        benefitPeriodStart: '2026-01-01',
+        benefitPeriodEnd: '2026-12-31',
+        metricType: 'member_oop_applied',
+        delta: 12.5,
+        source: 'claim_line_item',
+        sourceId: 'HIST-LI-0001',
+        status: 'posted'
       }
     ]);
 
@@ -100,6 +113,7 @@ describe('sqlite application workflows', () => {
         memberId: member.memberId,
         policyId: policy.policyId,
         provider: { providerId: 'PRV-0001', name: 'CityCare Clinic' },
+        dateOfService: '2026-03-01',
         diagnosisCodes: ['J02.9'],
         lineItems: [
           { serviceCode: 'office_visit', description: 'Primary care consultation', billedAmount: 150 },
@@ -153,20 +167,32 @@ describe('sqlite application workflows', () => {
       }
     );
 
+    const overturned = await resolveDisputeCommand(
+      { claimRepository, policyRepository, disputeRepository, accumulatorRepository, clock },
+      { disputeId: dispute.disputeId, outcome: 'overturned', note: 'Manual approval after dispute review.' }
+    );
+
     const persistedClaim = await getClaim(claimRepository, claim.claimId);
     const disputes = await listClaimDisputes(disputeRepository, claim.claimId);
     const accumulatorEntries = await accumulatorRepository.listByPolicyAndService(policy.policyId, 'lab_test');
 
-    expect(persistedClaim.status).toBe('paid');
-    expect(persistedClaim.approvedLineItemCount).toBe(2);
+    expect(overturned.dispute.status).toBe('overturned');
+    expect(persistedClaim.status).toBe('approved');
+    expect(persistedClaim.approvedLineItemCount).toBe(3);
     expect(persistedClaim.lineDecisions).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ decision: 'approved', lineItemId: lineItemIdsToPay[0] }),
         expect.objectContaining({ decision: 'approved', lineItemId: manualReviewLine!.lineItemId }),
-        expect.objectContaining({ decision: 'denied', lineItemId: deniedLine!.lineItemId, reasonCode: 'SERVICE_NOT_COVERED' })
+        expect.objectContaining({ decision: 'approved', lineItemId: deniedLine!.lineItemId, reasonCode: null })
       ])
     );
-    expect(disputes).toEqual([dispute]);
+    expect(disputes).toEqual([
+      expect.objectContaining({
+        disputeId: dispute.disputeId,
+        status: 'overturned',
+        resolutionNote: 'Manual approval after dispute review.'
+      })
+    ]);
     expect(accumulatorEntries).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ sourceId: 'HIST-LI-0001', delta: 50 }),

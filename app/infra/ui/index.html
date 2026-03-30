@@ -122,6 +122,9 @@
               <label>Provider name
                 <input id="provider-name" type="text" value="Downtown Clinic" required />
               </label>
+              <label>Date of service
+                <input id="submit-date-of-service" type="date" value="2026-03-01" required />
+              </label>
               <label>Diagnosis codes
                 <input id="diagnosis-codes" type="text" value="J02.9" />
               </label>
@@ -188,6 +191,26 @@
                 </label>
                 <div id="dispute-line-items" class="stack"></div>
                 <button type="submit">Open dispute</button>
+              </form>
+
+              <form id="resolve-dispute-form" class="simple-card action-card">
+                <div class="action-card-head">
+                  <h3>Resolve dispute</h3>
+                  <span class="action-chip">POST dispute resolution</span>
+                </div>
+                <label>Open dispute
+                  <select id="resolve-dispute-id"></select>
+                </label>
+                <label>Outcome
+                  <select id="resolve-dispute-outcome">
+                    <option value="upheld">upheld</option>
+                    <option value="overturned">overturned</option>
+                  </select>
+                </label>
+                <label>Resolution note
+                  <textarea id="resolve-dispute-note" rows="2">Reviewed and finalized.</textarea>
+                </label>
+                <button type="submit">Resolve dispute</button>
               </form>
             </div>
           </div>

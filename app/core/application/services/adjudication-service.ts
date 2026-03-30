@@ -1,9 +1,10 @@
 import type { AccumulatorEntry } from '../../domain/accumulator.js';
 import type { Claim, ClaimLineItem, LineDecision } from '../../domain/claim.js';
-import type { Policy } from '../../domain/policy.js';
+import type { ReasonCode } from '../../domain/enums.js';
+import type { Policy, ServiceRule } from '../../domain/policy.js';
 import { getAccumulatorUsage } from './accumulator-service.js';
-import { getBenefitPeriodWindow } from './benefit-period-service.js';
-import { getMemberNextStep, getReasonText } from './explanation-service.js';
+import { getBenefitPeriodWindowForDate, type BenefitPeriodWindow } from './benefit-period-service.js';
+import { buildDecisionExplanation } from './explanation-service.js';
 
 export interface AdjudicationResult {
   lineItems: ClaimLineItem[];
@@ -15,7 +16,20 @@ interface AdjudicationContext {
   claim: Claim;
   policy: Policy;
   accumulatorEntriesByService: Map<string, AccumulatorEntry[]>;
-  asOfDate: Date;
+  accumulatorEntriesForPolicy: AccumulatorEntry[];
+}
+
+interface ApprovalAmounts {
+  payerAmount: number;
+  memberResponsibility: number;
+  memberOopApplied: number;
+  deductibleApplied: number;
+  deductibleSatisfied: number;
+  standardPayerAmount: number;
+}
+
+function roundMoney(value: number): number {
+  return Number(value.toFixed(2));
 }
 
 function indexDecisions(lineDecisions: LineDecision[]): Map<string, LineDecision> {
@@ -63,6 +77,7 @@ function createAccumulatorEntries(
   claim: Claim,
   lineItem: ClaimLineItem,
   payerAmount: number,
+  memberOopApplied: number,
   periodStart: string,
   periodEnd: string
 ): AccumulatorEntry[] {
@@ -90,18 +105,195 @@ function createAccumulatorEntries(
       source: 'claim_line_item',
       sourceId: lineItem.lineItemId,
       status: 'posted'
+    },
+    {
+      memberId: claim.memberId,
+      policyId: claim.policyId,
+      serviceCode: lineItem.serviceCode,
+      benefitPeriodStart: periodStart,
+      benefitPeriodEnd: periodEnd,
+      metricType: 'member_oop_applied',
+      delta: memberOopApplied,
+      source: 'claim_line_item',
+      sourceId: lineItem.lineItemId,
+      status: 'posted'
     }
   ];
 }
 
-export function adjudicateClaim(context: AdjudicationContext): AdjudicationResult {
-  const { claim, policy, accumulatorEntriesByService, asOfDate } = context;
-  const period = getBenefitPeriodWindow(policy.effectiveDate, asOfDate);
+function getServiceRule(policy: Policy, serviceCode: string): ServiceRule | undefined {
+  return policy.coverageRules.serviceRules.find((serviceRule) => serviceRule.serviceCode === serviceCode);
+}
 
+function createDeniedDecision(
+  lineItem: ClaimLineItem,
+  reasonCode: ReasonCode,
+  context: {
+    claim: Claim;
+    policy: Policy;
+    serviceRule: ServiceRule | undefined;
+    remainingDollarCap?: number | null;
+    remainingVisitCap?: number | null;
+  }
+): LineDecision {
+  const explanation = buildDecisionExplanation({
+    reasonCode,
+    lineItemDescription: lineItem.description,
+    serviceCode: lineItem.serviceCode,
+    serviceDate: context.claim.dateOfService,
+    policyEffectiveDate: context.policy.effectiveDate,
+    yearlyDollarCap: context.serviceRule?.yearlyDollarCap ?? null,
+    yearlyVisitCap: context.serviceRule?.yearlyVisitCap ?? null,
+    remainingDollarCap: context.remainingDollarCap ?? null,
+    remainingVisitCap: context.remainingVisitCap ?? null,
+    missingFieldLabel: 'the claim service date'
+  });
+
+  return {
+    lineItemId: lineItem.lineItemId,
+    decision: 'denied',
+    reasonCode,
+    reasonText: explanation.reasonText,
+    memberNextStep: explanation.memberNextStep,
+    payerAmount: 0,
+    memberResponsibility: lineItem.billedAmount
+  };
+}
+
+function createManualReviewDecision(
+  lineItem: ClaimLineItem,
+  claim: Claim,
+  policy: Policy,
+  serviceRule: ServiceRule,
+  standardPayerAmount: number,
+  remainingDollarCap: number
+): LineDecision {
+  const explanation = buildDecisionExplanation({
+    reasonCode: 'MANUAL_REVIEW_REQUIRED',
+    lineItemDescription: lineItem.description,
+    serviceCode: lineItem.serviceCode,
+    serviceDate: claim.dateOfService,
+    policyEffectiveDate: policy.effectiveDate,
+    yearlyDollarCap: serviceRule.yearlyDollarCap,
+    remainingDollarCap,
+    standardPayerAmount
+  });
+
+  return {
+    lineItemId: lineItem.lineItemId,
+    decision: 'manual_review',
+    reasonCode: 'MANUAL_REVIEW_REQUIRED',
+    reasonText: explanation.reasonText,
+    memberNextStep: explanation.memberNextStep,
+    payerAmount: null,
+    memberResponsibility: null
+  };
+}
+
+function createApprovedDecision(lineItemId: string, payerAmount: number, memberResponsibility: number): LineDecision {
+  return {
+    lineItemId,
+    decision: 'approved',
+    reasonCode: null,
+    reasonText: null,
+    memberNextStep: null,
+    payerAmount,
+    memberResponsibility
+  };
+}
+
+function getPeriodForClaim(claim: Claim, policy: Policy): BenefitPeriodWindow | null {
+  if (!claim.dateOfService) {
+    return null;
+  }
+
+  return getBenefitPeriodWindowForDate(policy.effectiveDate, claim.dateOfService);
+}
+
+function isPolicyActiveForClaim(claim: Claim, policy: Policy): boolean {
+  if (!claim.dateOfService) {
+    return false;
+  }
+
+  return claim.dateOfService >= policy.effectiveDate;
+}
+
+function calculateApprovalAmounts(
+  lineItem: ClaimLineItem,
+  policy: Policy,
+  remainingDeductible: number,
+  remainingOutOfPocketMax: number
+): ApprovalAmounts {
+  const allowedAmount = lineItem.billedAmount;
+  const deductibleApplied = Math.min(allowedAmount, remainingDeductible);
+  const coveredAmount = Math.max(0, allowedAmount - deductibleApplied);
+  const standardPayerAmount = roundMoney((coveredAmount * policy.coverageRules.coinsurancePercent) / 100);
+  const standardMemberResponsibility = roundMoney(allowedAmount - standardPayerAmount);
+  const memberOopApplied = roundMoney(Math.min(standardMemberResponsibility, remainingOutOfPocketMax));
+  const payerAmount = roundMoney(allowedAmount - memberOopApplied);
+  const deductibleSatisfied = Math.min(deductibleApplied, memberOopApplied);
+
+  return {
+    payerAmount,
+    memberResponsibility: roundMoney(allowedAmount - payerAmount),
+    memberOopApplied,
+    deductibleApplied,
+    deductibleSatisfied,
+    standardPayerAmount
+  };
+}
+
+function getServiceEntries(
+  serviceCode: string,
+  existingEntriesByService: Map<string, AccumulatorEntry[]>,
+  pendingEntries: AccumulatorEntry[]
+): AccumulatorEntry[] {
+  return [
+    ...(existingEntriesByService.get(serviceCode) ?? []),
+    ...pendingEntries.filter((entry) => entry.serviceCode === serviceCode)
+  ];
+}
+
+function getPolicyEntries(existingEntries: AccumulatorEntry[], pendingEntries: AccumulatorEntry[]): AccumulatorEntry[] {
+  return [...existingEntries, ...pendingEntries];
+}
+
+export function adjudicateClaim(context: AdjudicationContext): AdjudicationResult {
+  const { claim, policy, accumulatorEntriesByService, accumulatorEntriesForPolicy } = context;
   const lineItems = [...claim.lineItems];
   const decisionsByLineItemId = indexDecisions(claim.lineDecisions);
   const accumulatorEntries: AccumulatorEntry[] = [];
   let remainingDeductible = getRemainingDeductible(claim, policy);
+
+  if (!claim.dateOfService) {
+    for (let index = 0; index < lineItems.length; index += 1) {
+      const lineItem = lineItems[index];
+      if (!lineItem || lineItem.status !== 'submitted') {
+        continue;
+      }
+
+      lineItems[index] = { ...lineItem, status: 'denied' };
+      decisionsByLineItemId.set(
+        lineItem.lineItemId,
+        createDeniedDecision(lineItem, 'MISSING_INFORMATION', { claim, policy, serviceRule: getServiceRule(policy, lineItem.serviceCode) })
+      );
+    }
+
+    return {
+      lineItems,
+      lineDecisions: [...decisionsByLineItemId.values()],
+      accumulatorEntries
+    };
+  }
+
+  const period = getPeriodForClaim(claim, policy);
+  if (!period) {
+    return {
+      lineItems,
+      lineDecisions: [...decisionsByLineItemId.values()],
+      accumulatorEntries
+    };
+  }
 
   for (let index = 0; index < lineItems.length; index += 1) {
     const lineItem = lineItems[index];
@@ -109,92 +301,88 @@ export function adjudicateClaim(context: AdjudicationContext): AdjudicationResul
       continue;
     }
 
-    const rule = policy.coverageRules.serviceRules.find((serviceRule) => serviceRule.serviceCode === lineItem.serviceCode);
-    const serviceEntries = [
-      ...(accumulatorEntriesByService.get(lineItem.serviceCode) ?? []),
-      ...accumulatorEntries.filter((entry) => entry.serviceCode === lineItem.serviceCode)
-    ];
-    const usage = getAccumulatorUsage(serviceEntries, period.start, period.end);
+    const rule = getServiceRule(policy, lineItem.serviceCode);
+    const serviceEntries = getServiceEntries(lineItem.serviceCode, accumulatorEntriesByService, accumulatorEntries);
+    const serviceUsage = getAccumulatorUsage(serviceEntries, period.start, period.end);
+
+    if (!isPolicyActiveForClaim(claim, policy)) {
+      lineItems[index] = { ...lineItem, status: 'denied' };
+      decisionsByLineItemId.set(lineItem.lineItemId, createDeniedDecision(lineItem, 'POLICY_NOT_ACTIVE', { claim, policy, serviceRule: rule }));
+      continue;
+    }
 
     if (!rule || !rule.covered) {
       lineItems[index] = { ...lineItem, status: 'denied' };
-      decisionsByLineItemId.set(lineItem.lineItemId, {
-        lineItemId: lineItem.lineItemId,
-        decision: 'denied',
-        reasonCode: 'SERVICE_NOT_COVERED',
-        reasonText: getReasonText('SERVICE_NOT_COVERED'),
-        memberNextStep: getMemberNextStep('SERVICE_NOT_COVERED'),
-        payerAmount: 0,
-        memberResponsibility: lineItem.billedAmount
-      });
+      decisionsByLineItemId.set(lineItem.lineItemId, createDeniedDecision(lineItem, 'SERVICE_NOT_COVERED', { claim, policy, serviceRule: rule }));
       continue;
     }
 
-    if (rule.yearlyVisitCap !== null && usage.usedVisits >= rule.yearlyVisitCap) {
+    const remainingVisitCap =
+      rule.yearlyVisitCap === null ? null : Math.max(0, rule.yearlyVisitCap - serviceUsage.usedVisits);
+    if (rule.yearlyVisitCap !== null && remainingVisitCap !== null && remainingVisitCap <= 0) {
       lineItems[index] = { ...lineItem, status: 'denied' };
-      decisionsByLineItemId.set(lineItem.lineItemId, {
-        lineItemId: lineItem.lineItemId,
-        decision: 'denied',
-        reasonCode: 'VISIT_CAP_EXCEEDED',
-        reasonText: getReasonText('VISIT_CAP_EXCEEDED'),
-        memberNextStep: getMemberNextStep('VISIT_CAP_EXCEEDED'),
-        payerAmount: 0,
-        memberResponsibility: lineItem.billedAmount
-      });
+      decisionsByLineItemId.set(
+        lineItem.lineItemId,
+        createDeniedDecision(lineItem, 'VISIT_CAP_EXCEEDED', {
+          claim,
+          policy,
+          serviceRule: rule,
+          remainingVisitCap
+        })
+      );
       continue;
     }
 
-    const allowedAmount = lineItem.billedAmount;
-    const deductibleApplied = Math.min(allowedAmount, remainingDeductible);
-    const coveredAmount = Math.max(0, allowedAmount - deductibleApplied);
-    const payerAmount = Number(((coveredAmount * policy.coverageRules.coinsurancePercent) / 100).toFixed(2));
-    const memberResponsibility = Number((allowedAmount - payerAmount).toFixed(2));
+    const policyUsage = getAccumulatorUsage(getPolicyEntries(accumulatorEntriesForPolicy, accumulatorEntries), period.start, period.end);
+    const remainingOutOfPocketMax = Math.max(
+      0,
+      roundMoney(policy.coverageRules.annualOutOfPocketMax - policyUsage.memberOopApplied)
+    );
+    const approval = calculateApprovalAmounts(lineItem, policy, remainingDeductible, remainingOutOfPocketMax);
 
     if (rule.yearlyDollarCap !== null) {
-      const remainingDollarCap = Number((rule.yearlyDollarCap - usage.usedDollars).toFixed(2));
-
+      const remainingDollarCap = roundMoney(rule.yearlyDollarCap - serviceUsage.usedDollars);
       if (remainingDollarCap <= 0) {
         lineItems[index] = { ...lineItem, status: 'denied' };
-        decisionsByLineItemId.set(lineItem.lineItemId, {
-          lineItemId: lineItem.lineItemId,
-          decision: 'denied',
-          reasonCode: 'YEARLY_CAP_EXCEEDED',
-          reasonText: getReasonText('YEARLY_CAP_EXCEEDED'),
-          memberNextStep: getMemberNextStep('YEARLY_CAP_EXCEEDED'),
-          payerAmount: 0,
-          memberResponsibility: allowedAmount
-        });
+        decisionsByLineItemId.set(
+          lineItem.lineItemId,
+          createDeniedDecision(lineItem, 'YEARLY_CAP_EXCEEDED', {
+            claim,
+            policy,
+            serviceRule: rule,
+            remainingDollarCap
+          })
+        );
         continue;
       }
 
-      if (payerAmount > remainingDollarCap) {
+      if (approval.payerAmount > remainingDollarCap) {
         lineItems[index] = { ...lineItem, status: 'manual_review' };
-        decisionsByLineItemId.set(lineItem.lineItemId, {
-          lineItemId: lineItem.lineItemId,
-          decision: 'manual_review',
-          reasonCode: 'MANUAL_REVIEW_REQUIRED',
-          reasonText: getReasonText('MANUAL_REVIEW_REQUIRED'),
-          memberNextStep: null,
-          payerAmount: null,
-          memberResponsibility: null
-        });
+        decisionsByLineItemId.set(
+          lineItem.lineItemId,
+          createManualReviewDecision(lineItem, claim, policy, rule, approval.payerAmount, remainingDollarCap)
+        );
         continue;
       }
     }
 
     lineItems[index] = { ...lineItem, status: 'approved' };
-    decisionsByLineItemId.set(lineItem.lineItemId, {
-      lineItemId: lineItem.lineItemId,
-      decision: 'approved',
-      reasonCode: null,
-      reasonText: null,
-      memberNextStep: null,
-      payerAmount,
-      memberResponsibility
-    });
+    decisionsByLineItemId.set(
+      lineItem.lineItemId,
+      createApprovedDecision(lineItem.lineItemId, approval.payerAmount, approval.memberResponsibility)
+    );
 
-    accumulatorEntries.push(...createAccumulatorEntries(claim, lineItem, payerAmount, period.start, period.end));
-    remainingDeductible = Math.max(0, remainingDeductible - deductibleApplied);
+    accumulatorEntries.push(
+      ...createAccumulatorEntries(
+        claim,
+        lineItem,
+        approval.payerAmount,
+        approval.memberOopApplied,
+        period.start,
+        period.end
+      )
+    );
+    remainingDeductible = Math.max(0, roundMoney(remainingDeductible - approval.deductibleSatisfied));
   }
 
   return {
@@ -210,9 +398,8 @@ export function resolveManualReviewDecision(
   lineItemId: string,
   decision: 'approved' | 'denied',
   accumulatorEntriesByService: Map<string, AccumulatorEntry[]>,
-  asOfDate: Date
+  accumulatorEntriesForPolicy: AccumulatorEntry[]
 ): AdjudicationResult {
-  const period = getBenefitPeriodWindow(policy.effectiveDate, asOfDate);
   const lineItems = [...claim.lineItems];
   const decisionsByLineItemId = indexDecisions(claim.lineDecisions);
   const lineItemIndex = lineItems.findIndex((lineItem) => lineItem.lineItemId === lineItemId);
@@ -234,17 +421,71 @@ export function resolveManualReviewDecision(
     };
   }
 
+  const serviceRule = getServiceRule(policy, lineItem.serviceCode);
+
+  if (!claim.dateOfService) {
+    lineItems[lineItemIndex] = { ...lineItem, status: 'denied' };
+    decisionsByLineItemId.set(
+      lineItem.lineItemId,
+      createDeniedDecision(lineItem, 'MISSING_INFORMATION', { claim, policy, serviceRule })
+    );
+    return {
+      lineItems,
+      lineDecisions: [...decisionsByLineItemId.values()],
+      accumulatorEntries: []
+    };
+  }
+
+  if (!isPolicyActiveForClaim(claim, policy)) {
+    lineItems[lineItemIndex] = { ...lineItem, status: 'denied' };
+    decisionsByLineItemId.set(
+      lineItem.lineItemId,
+      createDeniedDecision(lineItem, 'POLICY_NOT_ACTIVE', { claim, policy, serviceRule })
+    );
+    return {
+      lineItems,
+      lineDecisions: [...decisionsByLineItemId.values()],
+      accumulatorEntries: []
+    };
+  }
+
+  if (!serviceRule || !serviceRule.covered) {
+    lineItems[lineItemIndex] = { ...lineItem, status: 'denied' };
+    decisionsByLineItemId.set(
+      lineItem.lineItemId,
+      createDeniedDecision(lineItem, 'SERVICE_NOT_COVERED', { claim, policy, serviceRule })
+    );
+    return {
+      lineItems,
+      lineDecisions: [...decisionsByLineItemId.values()],
+      accumulatorEntries: []
+    };
+  }
+
+  const period = getPeriodForClaim(claim, policy);
+  if (!period) {
+    return {
+      lineItems,
+      lineDecisions: [...decisionsByLineItemId.values()],
+      accumulatorEntries: []
+    };
+  }
+
+  const serviceEntries = accumulatorEntriesByService.get(lineItem.serviceCode) ?? [];
+  const serviceUsage = getAccumulatorUsage(serviceEntries, period.start, period.end);
+
   if (decision === 'denied') {
     lineItems[lineItemIndex] = { ...lineItem, status: 'denied' };
-    decisionsByLineItemId.set(lineItem.lineItemId, {
-      lineItemId: lineItem.lineItemId,
-      decision: 'denied',
-      reasonCode: 'YEARLY_CAP_EXCEEDED',
-      reasonText: getReasonText('YEARLY_CAP_EXCEEDED'),
-      memberNextStep: getMemberNextStep('YEARLY_CAP_EXCEEDED'),
-      payerAmount: 0,
-      memberResponsibility: lineItem.billedAmount
-    });
+    decisionsByLineItemId.set(
+      lineItem.lineItemId,
+      createDeniedDecision(lineItem, 'YEARLY_CAP_EXCEEDED', {
+        claim,
+        policy,
+        serviceRule,
+        remainingDollarCap:
+          serviceRule.yearlyDollarCap === null ? null : roundMoney(serviceRule.yearlyDollarCap - serviceUsage.usedDollars)
+      })
+    );
 
     return {
       lineItems,
@@ -253,35 +494,123 @@ export function resolveManualReviewDecision(
     };
   }
 
-  const rule = policy.coverageRules.serviceRules.find((serviceRule) => serviceRule.serviceCode === lineItem.serviceCode);
-  const serviceEntries = accumulatorEntriesByService.get(lineItem.serviceCode) ?? [];
-  const usage = getAccumulatorUsage(serviceEntries, period.start, period.end);
+  const policyUsage = getAccumulatorUsage(accumulatorEntriesForPolicy, period.start, period.end);
+  const remainingOutOfPocketMax = Math.max(
+    0,
+    roundMoney(policy.coverageRules.annualOutOfPocketMax - policyUsage.memberOopApplied)
+  );
   const remainingDeductible = getRemainingDeductible(claim, policy);
-  const allowedAmount = lineItem.billedAmount;
-  const deductibleApplied = Math.min(allowedAmount, remainingDeductible);
-  const coveredAmount = Math.max(0, allowedAmount - deductibleApplied);
-  const normalPayerAmount = Number(((coveredAmount * policy.coverageRules.coinsurancePercent) / 100).toFixed(2));
+  const approval = calculateApprovalAmounts(lineItem, policy, remainingDeductible, remainingOutOfPocketMax);
   const remainingDollarCap =
-    rule?.yearlyDollarCap === null || rule?.yearlyDollarCap === undefined
-      ? normalPayerAmount
-      : Number((rule.yearlyDollarCap - usage.usedDollars).toFixed(2));
-  const payerAmount = Number(Math.max(0, Math.min(normalPayerAmount, remainingDollarCap)).toFixed(2));
-  const memberResponsibility = Number((allowedAmount - payerAmount).toFixed(2));
+    serviceRule.yearlyDollarCap === null ? null : roundMoney(serviceRule.yearlyDollarCap - serviceUsage.usedDollars);
+
+  if (remainingDollarCap !== null && remainingDollarCap <= 0) {
+    lineItems[lineItemIndex] = { ...lineItem, status: 'denied' };
+    decisionsByLineItemId.set(
+      lineItem.lineItemId,
+      createDeniedDecision(lineItem, 'YEARLY_CAP_EXCEEDED', {
+        claim,
+        policy,
+        serviceRule,
+        remainingDollarCap
+      })
+    );
+
+    return {
+      lineItems,
+      lineDecisions: [...decisionsByLineItemId.values()],
+      accumulatorEntries: []
+    };
+  }
+
+  const payerAmount =
+    remainingDollarCap === null ? approval.payerAmount : roundMoney(Math.min(approval.payerAmount, remainingDollarCap));
+  const memberResponsibility = roundMoney(lineItem.billedAmount - payerAmount);
+  const memberOopApplied = roundMoney(Math.min(approval.memberOopApplied, memberResponsibility));
 
   lineItems[lineItemIndex] = { ...lineItem, status: 'approved' };
-  decisionsByLineItemId.set(lineItem.lineItemId, {
-    lineItemId: lineItem.lineItemId,
-    decision: 'approved',
-    reasonCode: null,
-    reasonText: null,
-    memberNextStep: null,
-    payerAmount,
-    memberResponsibility
-  });
+  decisionsByLineItemId.set(
+    lineItem.lineItemId,
+    createApprovedDecision(lineItem.lineItemId, payerAmount, memberResponsibility)
+  );
 
   return {
     lineItems,
     lineDecisions: [...decisionsByLineItemId.values()],
-    accumulatorEntries: createAccumulatorEntries(claim, lineItem, payerAmount, period.start, period.end)
+    accumulatorEntries: createAccumulatorEntries(
+      claim,
+      lineItem,
+      payerAmount,
+      memberOopApplied,
+      period.start,
+      period.end
+    )
+  };
+}
+
+export function overturnDeniedLineItems(
+  claim: Claim,
+  policy: Policy,
+  lineItemIds: string[],
+  accumulatorEntriesByService: Map<string, AccumulatorEntry[]>,
+  accumulatorEntriesForPolicy: AccumulatorEntry[]
+): AdjudicationResult {
+  const lineItems = [...claim.lineItems];
+  const decisionsByLineItemId = indexDecisions(claim.lineDecisions);
+  const accumulatorEntries: AccumulatorEntry[] = [];
+  const period = getPeriodForClaim(claim, policy);
+
+  if (!period) {
+    return {
+      lineItems,
+      lineDecisions: [...decisionsByLineItemId.values()],
+      accumulatorEntries
+    };
+  }
+
+  let remainingDeductible = getRemainingDeductible(claim, policy);
+
+  for (const lineItemId of lineItemIds) {
+    const lineItemIndex = lineItems.findIndex((lineItem) => lineItem.lineItemId === lineItemId);
+    if (lineItemIndex < 0) {
+      continue;
+    }
+
+    const lineItem = lineItems[lineItemIndex];
+    if (!lineItem) {
+      continue;
+    }
+
+    const policyUsage = getAccumulatorUsage(getPolicyEntries(accumulatorEntriesForPolicy, accumulatorEntries), period.start, period.end);
+    const remainingOutOfPocketMax = Math.max(
+      0,
+      roundMoney(policy.coverageRules.annualOutOfPocketMax - policyUsage.memberOopApplied)
+    );
+    const approval = calculateApprovalAmounts(lineItem, policy, remainingDeductible, remainingOutOfPocketMax);
+
+    lineItems[lineItemIndex] = { ...lineItem, status: 'approved' };
+    decisionsByLineItemId.set(
+      lineItem.lineItemId,
+      createApprovedDecision(lineItem.lineItemId, approval.payerAmount, approval.memberResponsibility)
+    );
+
+    accumulatorEntries.push(
+      ...createAccumulatorEntries(
+        claim,
+        lineItem,
+        approval.payerAmount,
+        approval.memberOopApplied,
+        period.start,
+        period.end
+      )
+    );
+
+    remainingDeductible = Math.max(0, roundMoney(remainingDeductible - approval.deductibleSatisfied));
+  }
+
+  return {
+    lineItems,
+    lineDecisions: [...decisionsByLineItemId.values()],
+    accumulatorEntries
   };
 }

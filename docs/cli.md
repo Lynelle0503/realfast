@@ -38,6 +38,7 @@ That prints the supported workflow commands:
 - `resolve manual-review <claimId> <lineItemId> <approved|denied>`
 - `pay claim <claimId>`
 - `open dispute <claimId>`
+- `resolve dispute <disputeId> <upheld|overturned>`
 - `show claim <claimId>`
 
 ## Commands
@@ -127,6 +128,7 @@ Expected JSON shape:
     "providerId": "PRV-0501",
     "name": "CityCare Clinic"
   },
+  "dateOfService": "2026-03-01",
   "diagnosisCodes": ["J02.9"],
   "lineItems": [
     {
@@ -146,6 +148,7 @@ npm run cli -- submit claim \
   --policy-id POL-0001 \
   --provider-id PRV-0501 \
   --provider-name "CityCare Clinic" \
+  --date-of-service 2026-03-01 \
   --diagnosis-code J02.9 \
   --line-item "office_visit|Primary care consultation|150" \
   --line-item "lab_test|Rapid strep test|80"
@@ -217,6 +220,12 @@ npm run cli -- list disputes CLM-0001
 npm run cli -- show dispute DSP-0001
 ```
 
+### Resolve Dispute
+
+```bash
+npm run cli -- resolve dispute DSP-0001 overturned --note "Manual approval after review."
+```
+
 ### Show Accumulator Usage
 
 ```bash
@@ -227,9 +236,9 @@ This prints totals, underlying ledger entries, the matched service rule, and any
 
 ## Current Workflow Constraints
 
-- The current product rule allows only one claim per member-policy pair.
-- Because of that rule, a fresh CLI flow cannot submit a first claim and then submit a second claim on the same policy to demonstrate annual-limit exhaustion.
-- To inspect limit behavior today, use the seeded demo data together with `show claim` and `show accumulator`, or create a fresh member-policy pair and adjudicate a single claim on it.
+- New claim submission requires a claim-level `dateOfService`.
+- Multiple claims on the same member-policy pair are now allowed.
+- Dispute overturn is limited to disputes that reference denied line items.
 
 ### Show Claim
 
@@ -241,7 +250,7 @@ The claim output is formatted for explainability and includes:
 
 - claim status
 - claim status explanation based on rollup rules
-- dispute context for the claim, including the reminder that disputes do not automatically change claim status in v1
+- dispute context for the claim, including open and resolved dispute statuses
 - `approvedLineItemCount`
 - each line item status
 - payer amount
@@ -266,6 +275,7 @@ npm run cli -- show claim CLM-0003
 npm run cli -- resolve manual-review CLM-0001 LI-0005 approved
 npm run cli -- pay claim CLM-0001 --all-approved
 npm run cli -- open dispute CLM-0001 --reason "I disagree with the denial." --line-item-id LI-0004
+npm run cli -- resolve dispute DSP-0001 overturned --note "Manual approval after review."
 npm run cli -- list disputes CLM-0001
 ```
 
@@ -273,4 +283,4 @@ Notes:
 
 - `CLM-0002` is already adjudicated in the seeded data, so it should be inspected with `show claim`, not adjudicated again.
 - `CLM-0003` is already paid in the seeded data and is useful for comparing final-state claim output.
-- If you want to adjudicate a newly submitted claim through the CLI, create a fresh member and policy first, then submit a claim for that new member-policy pair.
+- If you want to adjudicate a newly submitted claim through the CLI, create a fresh member and policy first, then submit a claim with `--date-of-service`.

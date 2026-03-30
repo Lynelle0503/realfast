@@ -6,13 +6,17 @@ This repository contains a working v1 claims processing system for an insurance 
 
 - Create members and member-owned policies.
 - Submit claims with one or more line items.
+- Require a claim-level `dateOfService` for new submissions.
 - Adjudicate line items against policy `serviceRules` matched by `serviceCode`.
 - Apply policy-level deductible and coinsurance.
+- Use `dateOfService` to validate policy activity and select the policy-year benefit period.
 - Enforce yearly dollar caps and yearly visit caps.
+- Enforce `annualOutOfPocketMax` through policy-year member out-of-pocket accumulation.
 - Route partial-payment cases to `manual_review` instead of auto-approving them.
 - Roll up line-item states into derived claim states.
 - Mark approved line items as paid.
 - Open disputes tied to claims and, optionally, specific denied line items.
+- Resolve disputes as `upheld` or `overturned` and update the original claim for overturned line-item disputes.
 - Track approved usage through accumulator ledger entries.
 
 ## Tech Stack
@@ -95,6 +99,7 @@ npm run cli -- adjudicate claim CLM-0001
 npm run cli -- resolve manual-review CLM-0001 LI-0005 approved
 npm run cli -- pay claim CLM-0001 --all-approved
 npm run cli -- open dispute CLM-0001 --reason "I disagree with the denial." --line-item-id LI-0004
+npm run cli -- resolve dispute DSP-0001 overturned --note "Manual approval after review."
 ```
 
 ## API Summary
@@ -122,6 +127,7 @@ Disputes:
 - `GET /api/v1/claims/{claimId}/disputes`
 - `POST /api/v1/claims/{claimId}/disputes`
 - `GET /api/v1/disputes/{disputeId}`
+- `POST /api/v1/disputes/{disputeId}/resolution`
 
 ## Test And Validation
 

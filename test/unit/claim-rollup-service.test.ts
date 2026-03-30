@@ -8,6 +8,7 @@ const baseClaim: Claim = {
   memberId: 'MEM-1',
   policyId: 'POL-1',
   provider: { providerId: 'PRV-1', name: 'Provider' },
+  dateOfService: '2026-02-01',
   diagnosisCodes: ['J02.9'],
   status: 'submitted',
   approvedLineItemCount: 0,

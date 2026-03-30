@@ -4,6 +4,7 @@ export * from './commands/create-member.js';
 export * from './commands/create-policy.js';
 export * from './commands/mark-claim-payment.js';
 export * from './commands/open-dispute.js';
+export * from './commands/resolve-dispute.js';
 export * from './commands/resolve-manual-review.js';
 export * from './errors/application-error.js';
 export * from './errors/business-rule-error.js';
