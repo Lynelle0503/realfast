@@ -4,6 +4,7 @@ export interface AccumulatorUsage {
   usedDollars: number;
   usedVisits: number;
   memberOopApplied: number;
+  deductibleApplied: number;
 }
 
 export function getAccumulatorUsage(
@@ -38,9 +39,13 @@ export function getAccumulatorUsage(
         usage.memberOopApplied += entry.delta;
       }
 
+      if (entry.metricType === 'deductible_applied') {
+        usage.deductibleApplied += entry.delta;
+      }
+
       return usage;
     },
-    { usedDollars: 0, usedVisits: 0, memberOopApplied: 0 }
+    { usedDollars: 0, usedVisits: 0, memberOopApplied: 0, deductibleApplied: 0 }
   );
 }
 

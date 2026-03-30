@@ -38,8 +38,18 @@ function addColumnIfMissing(db: Database.Database, tableName: string, columnName
 
 export function runAdditiveMigrations(db: Database.Database): void {
   addColumnIfMissing(db, 'claims', 'date_of_service', 'TEXT');
+  addColumnIfMissing(db, 'claim_line_items', 'date_of_service', 'TEXT');
   addColumnIfMissing(db, 'disputes', 'resolved_at', 'TEXT');
   addColumnIfMissing(db, 'disputes', 'resolution_note', 'TEXT');
+  db.exec(
+    `UPDATE claim_line_items
+     SET date_of_service = (
+       SELECT claims.date_of_service
+       FROM claims
+       WHERE claims.id = claim_line_items.claim_id
+     )
+     WHERE date_of_service IS NULL`
+  );
 }
 
 export function initializeDatabase(options: SqliteDatabaseOptions = {}): Database.Database {

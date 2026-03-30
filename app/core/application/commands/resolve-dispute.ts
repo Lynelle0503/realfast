@@ -4,7 +4,7 @@ import type { AccumulatorRepository, ClaimRepository, Clock, DisputeRepository, 
 import { BusinessRuleError } from '../errors/business-rule-error.js';
 import { NotFoundError } from '../errors/not-found-error.js';
 import { applyClaimRollup } from '../services/claim-rollup-service.js';
-import { overturnDeniedLineItems } from '../services/adjudication-service.js';
+import { reconsiderDeniedLineItems } from '../services/adjudication-service.js';
 
 export async function resolveDisputeCommand(
   dependencies: {
@@ -51,10 +51,6 @@ export async function resolveDisputeCommand(
     throw new BusinessRuleError('Only line-item disputes can be overturned in this version.');
   }
 
-  if (!claim.dateOfService) {
-    throw new BusinessRuleError('A dispute cannot be overturned when the claim is missing the service date.');
-  }
-
   const deniedLineItems = dispute.referencedLineItemIds.map((lineItemId) => {
     const lineItem = claim.lineItems.find((item) => item.lineItemId === lineItemId);
     if (!lineItem) {
@@ -86,7 +82,7 @@ export async function resolveDisputeCommand(
     );
   }
 
-  const result = overturnDeniedLineItems(
+  const result = reconsiderDeniedLineItems(
     claim,
     policy,
     dispute.referencedLineItemIds,

@@ -164,7 +164,7 @@ describe('cli', () => {
     expect(stdout.output).toContain('Status: overturned');
     expect(stdout.output).toContain('Resolution note: Approved after review');
     expect(stdout.output).toContain('Claim CLM-0001');
-    expect(stdout.output).toContain('Approved line items: 5');
+    expect(stdout.output).toContain('Approved line items: 4');
 
     stdout = createMemoryStream();
     stderr = createMemoryStream();

@@ -23,22 +23,33 @@ const basePolicy: Policy = {
   }
 };
 
+type TestLineItemInput = Omit<Claim['lineItems'][number], 'dateOfService'> & {
+  dateOfService?: string | null;
+};
+
 const makeClaim = (
-  lineItems: Claim['lineItems'],
+  lineItems: TestLineItemInput[],
   overrides: Partial<Pick<Claim, 'dateOfService' | 'lineDecisions'>> = {}
-): Claim => ({
-  claimId: 'CLM-1',
-  memberId: 'MEM-1',
-  policyId: 'POL-1',
-  provider: { providerId: 'PRV-1', name: 'Provider' },
-  dateOfService: '2026-02-01',
-  diagnosisCodes: ['J02.9'],
-  status: 'submitted',
-  approvedLineItemCount: 0,
-  lineItems,
-  lineDecisions: [],
-  ...overrides
-});
+): Claim => {
+  const defaultServiceDate = overrides.dateOfService === undefined ? '2026-02-01' : overrides.dateOfService;
+
+  return {
+    claimId: 'CLM-1',
+    memberId: 'MEM-1',
+    policyId: 'POL-1',
+    provider: { providerId: 'PRV-1', name: 'Provider' },
+    dateOfService: '2026-02-01',
+    diagnosisCodes: ['J02.9'],
+    status: 'submitted',
+    approvedLineItemCount: 0,
+    lineItems: lineItems.map((lineItem) => ({
+      ...lineItem,
+      dateOfService: lineItem.dateOfService === undefined ? defaultServiceDate : lineItem.dateOfService
+    })),
+    lineDecisions: [],
+    ...overrides
+  };
+};
 
 function adjudicate(claim: Claim, policy = basePolicy, accumulatorEntriesForPolicy: AccumulatorEntry[] = []) {
   const accumulatorEntriesByService = new Map<string, AccumulatorEntry[]>();
@@ -91,7 +102,7 @@ describe('adjudication service', () => {
   it('denies submitted lines when the claim is missing a service date', () => {
     const result = adjudicate(
       makeClaim(
-        [{ lineItemId: 'LI-1', serviceCode: 'office_visit', description: 'Visit', billedAmount: 100, status: 'submitted' }],
+        [{ lineItemId: 'LI-1', serviceCode: 'office_visit', description: 'Visit', billedAmount: 100, dateOfService: null, status: 'submitted' }],
         { dateOfService: null }
       )
     );
@@ -99,6 +110,23 @@ describe('adjudication service', () => {
     expect(result.lineItems[0]?.status).toBe('denied');
     expect(result.lineDecisions[0]?.reasonCode).toBe('MISSING_INFORMATION');
     expect(result.lineDecisions[0]?.reasonText).toContain('claim service date');
+  });
+
+  it('allows mixed-date claims by adjudicating each line against its own service date', () => {
+    const result = adjudicate(
+      makeClaim(
+        [
+          { lineItemId: 'LI-1', serviceCode: 'office_visit', description: 'Visit before policy', billedAmount: 100, dateOfService: '2025-12-15', status: 'submitted' },
+          { lineItemId: 'LI-2', serviceCode: 'office_visit', description: 'Visit after policy', billedAmount: 100, dateOfService: '2026-02-01', status: 'submitted' }
+        ],
+        { dateOfService: '2026-02-01' }
+      )
+    );
+
+    expect(result.lineItems[0]?.status).toBe('denied');
+    expect(result.lineDecisions.find((decision) => decision.lineItemId === 'LI-1')?.reasonCode).toBe('POLICY_NOT_ACTIVE');
+    expect(result.lineItems[1]?.status).toBe('approved');
+    expect(result.lineDecisions.find((decision) => decision.lineItemId === 'LI-2')?.decision).toBe('approved');
   });
 
   it('denies submitted lines when the policy is not active on the service date', () => {
@@ -191,5 +219,43 @@ describe('adjudication service', () => {
     expect(result.lineDecisions[0]?.payerAmount).toBe(95);
     expect(result.lineDecisions[0]?.memberResponsibility).toBe(5);
     expect(result.accumulatorEntries[2]).toEqual(expect.objectContaining({ metricType: 'member_oop_applied', delta: 5 }));
+  });
+
+  it('applies remaining deductible across claims in the same policy year', () => {
+    const result = adjudicate(
+      makeClaim([
+        { lineItemId: 'LI-1', serviceCode: 'office_visit', description: 'Visit', billedAmount: 100, status: 'submitted' }
+      ]),
+      {
+        ...basePolicy,
+        coverageRules: {
+          ...basePolicy.coverageRules,
+          deductible: 100
+        }
+      },
+      [
+        {
+          memberId: 'MEM-1',
+          policyId: 'POL-1',
+          serviceCode: 'office_visit',
+          benefitPeriodStart: '2026-01-01',
+          benefitPeriodEnd: '2026-12-31',
+          metricType: 'deductible_applied',
+          delta: 50,
+          source: 'claim_line_item',
+          sourceId: 'HIST-LI-1',
+          status: 'posted'
+        }
+      ]
+    );
+
+    expect(result.lineItems[0]?.status).toBe('approved');
+    expect(result.lineDecisions[0]?.payerAmount).toBe(40);
+    expect(result.lineDecisions[0]?.memberResponsibility).toBe(60);
+    expect(result.accumulatorEntries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ metricType: 'deductible_applied', delta: 50 })
+      ])
+    );
   });
 });

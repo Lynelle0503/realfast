@@ -164,6 +164,7 @@ Example:
       "serviceCode": "office_visit",
       "description": "Primary care consultation",
       "billedAmount": 150,
+      "dateOfService": "2026-03-01",
       "status": "submitted"
     }
   ],
@@ -181,11 +182,13 @@ Fields:
 - `serviceCode`
 - `description`
 - `billedAmount`
+- `dateOfService`
 - `status`
 
 Important v1 note:
 
-- `dateOfService` is modeled at the claim level, not per line item.
+- Claim `dateOfService` is still stored as the default submission date, but each line item now carries its own authoritative `dateOfService`.
+- If a line item omits `dateOfService` during creation, the system fills it from the claim-level default.
 
 ### Line Decision
 
@@ -232,17 +235,19 @@ Fields:
 - `sourceId`
 - `status`
 
-Three metrics are used:
+Four metrics are used:
 
 - `dollars_paid`
 - `visits_used`
 - `member_oop_applied`
+- `deductible_applied`
 
 Current behavior:
 
 - Dollar usage accumulates based on insurer-paid amount.
 - Visit usage increments by `1` for each approved covered line.
 - Member out-of-pocket usage accumulates across services for policy-year out-of-pocket max checks.
+- Deductible usage accumulates across the policy year through `deductible_applied`.
 - Only approved lines generate accumulator entries.
 - The enum supports `posted` and `reversed`, but v1 currently only posts entries.
 
@@ -271,8 +276,7 @@ Fields:
 - One claim belongs to one member and one policy.
 - One claim has many claim line items.
 - One claim has zero or more line decisions.
-- One approved line item produces three accumulator entries in the current implementation:
-  `dollars_paid`, `visits_used`, and `member_oop_applied`.
+- One approved line item produces `dollars_paid`, `visits_used`, and `member_oop_applied`, and may also produce `deductible_applied` when part of the line satisfied remaining deductible.
 - One claim can have zero or more disputes.
 
 ## Adjudication Model
@@ -332,7 +336,7 @@ Rules:
 
 - Only `policy_year` is supported.
 - The benefit period resets on the effective-date anniversary.
-- The active period is computed from claim `dateOfService`.
+- The active period is computed from each line item's effective `dateOfService`.
 
 Example:
 

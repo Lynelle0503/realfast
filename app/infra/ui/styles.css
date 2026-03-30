@@ -103,6 +103,10 @@ h3 {
   align-items: center;
   padding: 0 1.5rem;
   background: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  border-bottom: 1px solid var(--border);
 }
 
 .topbar-title {
@@ -150,8 +154,7 @@ h3 {
 }
 
 .topbar-divider {
-  height: 1px;
-  background: var(--border);
+  display: none;
 }
 
 .app-shell {
@@ -177,7 +180,7 @@ h3 {
 
 .sidebar {
   position: sticky;
-  top: 1rem;
+  top: calc(64px + 1rem);
   align-self: start;
   overflow: hidden;
   transition:
@@ -372,6 +375,61 @@ h3 {
   border-left: 3px solid transparent;
   border-radius: 10px;
   padding-left: 1rem;
+}
+
+.member-collapsible {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.member-collapsible-summary {
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+}
+
+.member-collapsible-summary::-webkit-details-marker {
+  display: none;
+}
+
+.member-collapsible-summary.active {
+  background: var(--accent-soft);
+}
+
+.member-collapsible-summary > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.member-collapsible-summary span:not(.member-collapsible-chevron) {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.member-collapsible-chevron {
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 180ms ease;
+}
+
+.member-collapsible[open] .member-collapsible-chevron {
+  transform: rotate(225deg);
+}
+
+.member-collapsible-body {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0 1rem 1rem;
+  border-top: 1px solid var(--border);
 }
 
 .claim-link.active,
@@ -609,7 +667,7 @@ h3 {
 
 .line-item-editor {
   display: grid;
-  grid-template-columns: 1fr 1.4fr 0.8fr auto;
+  grid-template-columns: 1fr 1.4fr 0.9fr 1fr auto;
   gap: 0.6rem;
   align-items: end;
 }
@@ -707,10 +765,10 @@ h3 {
 
   .sidebar {
     position: fixed;
-    top: 65px;
+    top: 64px;
     left: 0;
     width: min(320px, 100vw);
-    height: calc(100vh - 65px);
+    height: calc(100vh - 64px);
     z-index: 20;
     transform: translateX(-100%);
     transition: transform 180ms ease;

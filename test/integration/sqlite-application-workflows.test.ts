@@ -177,13 +177,17 @@ describe('sqlite application workflows', () => {
     const accumulatorEntries = await accumulatorRepository.listByPolicyAndService(policy.policyId, 'lab_test');
 
     expect(overturned.dispute.status).toBe('overturned');
-    expect(persistedClaim.status).toBe('approved');
-    expect(persistedClaim.approvedLineItemCount).toBe(3);
+    expect(persistedClaim.status).toBe('paid');
+    expect(persistedClaim.approvedLineItemCount).toBe(2);
     expect(persistedClaim.lineDecisions).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ decision: 'approved', lineItemId: lineItemIdsToPay[0] }),
         expect.objectContaining({ decision: 'approved', lineItemId: manualReviewLine!.lineItemId }),
-        expect.objectContaining({ decision: 'approved', lineItemId: deniedLine!.lineItemId, reasonCode: null })
+        expect.objectContaining({
+          decision: 'denied',
+          lineItemId: deniedLine!.lineItemId,
+          reasonCode: 'SERVICE_NOT_COVERED'
+        })
       ])
     );
     expect(disputes).toEqual([
@@ -198,6 +202,9 @@ describe('sqlite application workflows', () => {
         expect.objectContaining({ sourceId: 'HIST-LI-0001', delta: 50 }),
         expect.objectContaining({ sourceId: manualReviewLine!.lineItemId, metricType: 'dollars_paid', delta: 50 })
       ])
+    );
+    expect(accumulatorEntries).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ sourceId: deniedLine!.lineItemId })])
     );
 
     close();

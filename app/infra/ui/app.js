@@ -77,6 +77,8 @@ const demoMemberTemplates = [
   { fullName: 'Vihaan Kapoor', dateOfBirth: '1987-02-14' }
 ];
 
+const serviceCodeCatalog = ['office_visit', 'lab_test', 'prescription', 'therapy_session', 'imaging'];
+
 function showToast(message, isError = false) {
   els.toast.textContent = message;
   els.toast.style.background = isError ? '#7f1d1d' : '#111827';
@@ -265,6 +267,32 @@ function optionalExplanationRow(label, value) {
   return `<div><strong>${label}</strong>: ${escapeHtml(value)}</div>`;
 }
 
+function normalizeServiceCode(value) {
+  return value.trim().replace(/\s+/g, '_');
+}
+
+function isDemoMemberFour(member) {
+  return member.memberId === 'MEM-0004';
+}
+
+function uniqueValues(values) {
+  return [...new Set(values)];
+}
+
+function availableServiceCodesForSelectedPolicy() {
+  const selectedPolicy =
+    state.availablePolicies.find((policy) => policy.policyId === els.submitPolicyId.value) ??
+    state.availablePolicies[0] ??
+    null;
+
+  const policyCodes = selectedPolicy?.coverageRules.serviceRules.map((rule) => rule.serviceCode) ?? [];
+  return uniqueValues(policyCodes.length > 0 ? policyCodes : serviceCodeCatalog);
+}
+
+function serviceCodeOptionMarkup(serviceCode, selected = false) {
+  return `<option value="${escapeHtml(serviceCode)}" ${selected ? 'selected' : ''}>${escapeHtml(serviceCode)}</option>`;
+}
+
 function renderMemberList() {
   if (state.members.length === 0) {
     els.memberList.innerHTML = '<p class="empty-state">No members found. Seed demo data or create a demo member.</p>';
@@ -273,12 +301,36 @@ function renderMemberList() {
 
   els.memberList.innerHTML = state.members
     .map(
-      (member) => `
-        <button type="button" class="member-button ${member.memberId === state.selectedMemberId ? 'active' : ''}" data-member-id="${member.memberId}">
-          <strong>${escapeHtml(member.fullName)}</strong>
-          <span>${escapeHtml(member.memberId)}</span>
-        </button>
-      `
+      (member) => {
+        const isSelected = member.memberId === state.selectedMemberId;
+        if (isDemoMemberFour(member)) {
+          return `
+            <details class="member-collapsible" ${isSelected ? 'open' : ''}>
+              <summary class="member-collapsible-summary ${isSelected ? 'active' : ''}">
+                <div>
+                  <strong>Demo Member 4</strong>
+                  <span>${escapeHtml(member.fullName)}</span>
+                </div>
+                <span class="member-collapsible-chevron" aria-hidden="true"></span>
+              </summary>
+              <div class="member-collapsible-body">
+                <div class="muted">${escapeHtml(member.memberId)} · DOB ${escapeHtml(member.dateOfBirth)}</div>
+                <button type="button" class="member-button ${isSelected ? 'active' : ''}" data-member-id="${member.memberId}">
+                  <strong>${escapeHtml(member.fullName)}</strong>
+                  <span>Open member record</span>
+                </button>
+              </div>
+            </details>
+          `;
+        }
+
+        return `
+          <button type="button" class="member-button ${isSelected ? 'active' : ''}" data-member-id="${member.memberId}">
+            <strong>${escapeHtml(member.fullName)}</strong>
+            <span>${escapeHtml(member.memberId)}</span>
+          </button>
+        `;
+      }
     )
     .join('');
 
@@ -500,6 +552,7 @@ function renderMemberDetail() {
   els.submitPolicyId.innerHTML = state.availablePolicies
     .map((policy) => `<option value="${policy.policyId}">${policy.policyId} · ${escapeHtml(policy.policyType)}</option>`)
     .join('');
+  refreshServiceCodePickers();
 
   const submitButton = els.submitClaimForm.querySelector('button[type="submit"]');
   if (state.availablePolicies.length === 0) {
@@ -559,7 +612,7 @@ function renderClaimDetail() {
     <article class="simple-card">
       <strong>Claim context</strong>
       <div class="simple-row"><span>Provider</span><span>${escapeHtml(state.claim.provider.name)} (${escapeHtml(state.claim.provider.providerId)})</span></div>
-      <div class="simple-row"><span>Service date</span><span>${escapeHtml(state.claim.dateOfService ?? 'missing')}</span></div>
+      <div class="simple-row"><span>Claim default service date</span><span>${escapeHtml(state.claim.dateOfService ?? 'missing')}</span></div>
       <div class="simple-row"><span>Diagnosis codes</span><span>${escapeHtml(state.claim.diagnosisCodes.join(', ') || 'none')}</span></div>
       <div class="simple-row"><span>Disputes</span><span>${state.disputes.length}</span></div>
     </article>
@@ -575,7 +628,7 @@ function renderClaimDetail() {
                 <summary class="accordion-summary">
                   <div>
                     <strong>${escapeHtml(lineItem.description)}</strong>
-                    <div class="muted">${escapeHtml(lineItem.lineItemId)} · ${escapeHtml(lineItem.serviceCode)}</div>
+                    <div class="muted">${escapeHtml(lineItem.lineItemId)} · ${escapeHtml(lineItem.serviceCode)} · service date ${escapeHtml(lineItem.dateOfService ?? state.claim.dateOfService ?? 'missing')}</div>
                   </div>
                   <div class="accordion-meta">
                     ${badge(lineItem.status)}
@@ -583,6 +636,10 @@ function renderClaimDetail() {
                 </summary>
                 <div class="accordion-body">
                   <div class="amount-grid">
+                    <div class="amount-card">
+                      <span>Service date</span>
+                      <strong>${escapeHtml(lineItem.dateOfService ?? state.claim.dateOfService ?? 'missing')}</strong>
+                    </div>
                     <div class="amount-card">
                       <span>Billed</span>
                       <strong>${formatCurrency(lineItem.billedAmount)}</strong>
@@ -694,15 +751,50 @@ function renderActionForms() {
   els.resolveDisputeForm.querySelector('button').disabled = !state.claim || openDisputes.length === 0;
 }
 
-function addLineItemRow(initial = { serviceCode: 'office_visit', description: 'Consultation', billedAmount: '120' }) {
+function syncServiceCodePicker(row) {
+  const select = row.querySelector('[name="serviceCode"]');
+  const normalizedValue = normalizeServiceCode(select.value);
+  const availableCodes = availableServiceCodesForSelectedPolicy();
+
+  select.innerHTML = [
+    '<option value="">Choose a policy service code</option>',
+    ...availableCodes.map((serviceCode) => serviceCodeOptionMarkup(serviceCode, serviceCode === normalizedValue))
+  ].join('');
+
+  if (!availableCodes.includes(normalizedValue)) {
+    select.value = '';
+  }
+}
+
+function refreshServiceCodePickers() {
+  [...els.lineItemsEditor.querySelectorAll('.line-item-editor')].forEach((row) => {
+    syncServiceCodePicker(row);
+  });
+}
+
+function attachServiceCodeBehavior(row) {
+  const select = row.querySelector('[name="serviceCode"]');
+
+  select.addEventListener('change', () => {
+    syncServiceCodePicker(row);
+  });
+
+  syncServiceCodePicker(row);
+}
+
+function addLineItemRow(initial = { serviceCode: 'office_visit', description: 'Consultation', billedAmount: '120', dateOfService: '' }) {
   const row = document.createElement('div');
   row.className = 'line-item-editor';
   row.innerHTML = `
-    <label>Service code<input name="serviceCode" type="text" value="${escapeHtml(initial.serviceCode)}" required /></label>
-    <label>Description<input name="description" type="text" value="${escapeHtml(initial.description)}" required /></label>
-    <label>Billed amount<input name="billedAmount" type="number" min="0" step="0.01" value="${escapeHtml(initial.billedAmount)}" required /></label>
+    <label>Service code
+      <select name="serviceCode" aria-label="Choose a policy service code" required></select>
+    </label>
+    <label>Description<input name="description" type="text" value="${escapeHtml(initial.description)}" placeholder="Primary care consultation" required /></label>
+    <label>Billed amount<input name="billedAmount" type="number" min="0" step="0.01" value="${escapeHtml(initial.billedAmount)}" placeholder="120.00" required /></label>
+    <label>Line service date<input name="dateOfService" type="date" value="${escapeHtml(initial.dateOfService)}" /></label>
     <button type="button" class="secondary">Remove</button>
   `;
+  attachServiceCodeBehavior(row);
   row.querySelector('button').addEventListener('click', () => {
     row.remove();
   });
@@ -710,10 +802,12 @@ function addLineItemRow(initial = { serviceCode: 'office_visit', description: 'C
 }
 
 function getClaimPayloadFromForm() {
+  const claimDateOfService = els.submitDateOfService.value;
   const lineItems = [...els.lineItemsEditor.querySelectorAll('.line-item-editor')].map((row) => ({
-    serviceCode: row.querySelector('[name="serviceCode"]').value.trim(),
+    serviceCode: normalizeServiceCode(row.querySelector('[name="serviceCode"]').value),
     description: row.querySelector('[name="description"]').value.trim(),
-    billedAmount: Number(row.querySelector('[name="billedAmount"]').value)
+    billedAmount: Number(row.querySelector('[name="billedAmount"]').value),
+    dateOfService: row.querySelector('[name="dateOfService"]').value || claimDateOfService
   }));
 
   return {
@@ -723,7 +817,7 @@ function getClaimPayloadFromForm() {
       providerId: els.providerId.value.trim(),
       name: els.providerName.value.trim()
     },
-    dateOfService: els.submitDateOfService.value,
+    dateOfService: claimDateOfService,
     diagnosisCodes: els.diagnosisCodes.value
       .split(',')
       .map((value) => value.trim())
@@ -861,6 +955,9 @@ els.actionModeSwitch.querySelectorAll('[data-action-mode]').forEach((button) => 
 });
 
 els.addLineItem.addEventListener('click', () => addLineItemRow());
+els.submitPolicyId.addEventListener('change', () => {
+  refreshServiceCodePickers();
+});
 
 els.submitClaimForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -1017,6 +1114,7 @@ els.resolveDisputeForm.addEventListener('submit', async (event) => {
 
 addLineItemRow();
 addLineItemRow({ serviceCode: 'lab_test', description: 'Rapid strep test', billedAmount: '80' });
+refreshServiceCodePickers();
 
 els.demoMemberTemplate.innerHTML = demoMemberTemplates
   .map((template) => `<option value="${template.fullName}">${escapeHtml(template.fullName)} · DOB ${escapeHtml(template.dateOfBirth)}</option>`)

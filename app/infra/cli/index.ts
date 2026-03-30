@@ -68,6 +68,10 @@ function findDecision(claim: Claim, lineItemId: string): LineDecision | undefine
   return claim.lineDecisions.find((lineDecision) => lineDecision.lineItemId === lineItemId);
 }
 
+function getServiceDateForLineItem(claim: Claim, lineItem: Claim['lineItems'][number]): string | null {
+  return lineItem.dateOfService ?? claim.dateOfService;
+}
+
 function getDeductibleAppliedForDecision(
   billedAmount: number,
   payerAmount: number | null,
@@ -87,25 +91,54 @@ function getDeductibleAppliedForDecision(
 }
 
 function getRemainingDeductibleForClaim(claim: Claim, policy: Policy): number {
-  return Math.max(
-    0,
-    policy.coverageRules.deductible -
-      claim.lineItems.reduce((sum, lineItem) => {
-        if (lineItem.status !== 'approved' && lineItem.status !== 'paid') {
-          return sum;
-        }
+  return Math.max(0, policy.coverageRules.deductible);
+}
 
-        const decision = findDecision(claim, lineItem.lineItemId);
-        if (!decision) {
-          return sum;
-        }
+function getRemainingDeductibleForPeriod(
+  claim: Claim,
+  policy: Policy,
+  accumulatorEntries: AccumulatorEntry[],
+  periodStart: string | null,
+  periodEnd: string | null
+): number {
+  if (!periodStart || !periodEnd) {
+    return getRemainingDeductibleForClaim(claim, policy);
+  }
 
-        return (
-          sum +
-          getDeductibleAppliedForDecision(lineItem.billedAmount, decision.payerAmount, policy.coverageRules.coinsurancePercent)
-        );
-      }, 0)
+  const usage = getAccumulatorUsage(accumulatorEntries, periodStart, periodEnd);
+  const deductibleSourceIds = new Set(
+    accumulatorEntries
+      .filter(
+        (entry) =>
+          entry.benefitPeriodStart === periodStart &&
+          entry.benefitPeriodEnd === periodEnd &&
+          entry.status === 'posted' &&
+          entry.metricType === 'deductible_applied'
+      )
+      .map((entry) => entry.sourceId)
   );
+
+  const fallbackApplied = claim.lineItems.reduce((sum, lineItem) => {
+    if (lineItem.status !== 'approved' && lineItem.status !== 'paid') {
+      return sum;
+    }
+
+    if (deductibleSourceIds.has(lineItem.lineItemId)) {
+      return sum;
+    }
+
+    const decision = findDecision(claim, lineItem.lineItemId);
+    if (!decision) {
+      return sum;
+    }
+
+    return (
+      sum +
+      getDeductibleAppliedForDecision(lineItem.billedAmount, decision.payerAmount, policy.coverageRules.coinsurancePercent)
+    );
+  }, 0);
+
+  return Math.max(0, policy.coverageRules.deductible - usage.deductibleApplied - fallbackApplied);
 }
 
 function formatServiceRule(policy: Policy | null, serviceCode: string): string {
@@ -183,12 +216,16 @@ function formatLineDecisionExplanation(
   const lines: string[] = [];
   const serviceRule = context.policy?.coverageRules.serviceRules.find((rule) => rule.serviceCode === lineItem.serviceCode);
   const serviceEntries = context.accumulatorEntriesByService.get(lineItem.serviceCode) ?? [];
+  const lineServiceDate = getServiceDateForLineItem(claim, lineItem);
+  const linePeriod =
+    context.policy && lineServiceDate ? getBenefitPeriodWindowForDate(context.policy.effectiveDate, lineServiceDate) : null;
   const usage =
-    context.periodStart && context.periodEnd
-      ? getAccumulatorUsage(serviceEntries, context.periodStart, context.periodEnd)
-      : { usedDollars: 0, usedVisits: 0, memberOopApplied: 0 };
+    linePeriod
+      ? getAccumulatorUsage(serviceEntries, linePeriod.start, linePeriod.end)
+      : { usedDollars: 0, usedVisits: 0, memberOopApplied: 0, deductibleApplied: 0 };
 
   lines.push(`  ${formatServiceRule(context.policy, lineItem.serviceCode)}`);
+  lines.push(`  Service date used: ${lineServiceDate ?? 'missing'}`);
 
   if (!decision) {
     lines.push('  Decision detail: no line decision has been recorded yet.');
@@ -214,7 +251,13 @@ function formatLineDecisionExplanation(
   }
 
   if (decision.reasonCode === 'MANUAL_REVIEW_REQUIRED' && serviceRule?.yearlyDollarCap !== null && serviceRule?.yearlyDollarCap !== undefined && context.policy) {
-    const remainingDeductible = getRemainingDeductibleForClaim(claim, context.policy);
+    const remainingDeductible = getRemainingDeductibleForPeriod(
+      claim,
+      context.policy,
+      context.policyAccumulatorEntries,
+      linePeriod?.start ?? null,
+      linePeriod?.end ?? null
+    );
     const deductibleApplied = Math.min(lineItem.billedAmount, remainingDeductible);
     const coveredAmount = Math.max(0, lineItem.billedAmount - deductibleApplied);
     const standardPayerAmount = Number(
@@ -321,6 +364,7 @@ function formatClaim(claim: Claim, context: ClaimFormattingContext): string {
     const decision = findDecision(claim, lineItem.lineItemId);
     lines.push(`- ${lineItem.lineItemId} ${lineItem.serviceCode}: ${lineItem.description}`);
     lines.push(`  State: ${lineItem.status}`);
+    lines.push(`  Service date: ${getServiceDateForLineItem(claim, lineItem) ?? 'missing'}`);
     lines.push(`  Billed amount: ${lineItem.billedAmount.toFixed(2)}`);
     lines.push(`  Payer amount: ${formatMoney(decision?.payerAmount ?? null)}`);
     lines.push(`  Member responsibility: ${formatMoney(decision?.memberResponsibility ?? null)}`);
@@ -388,12 +432,16 @@ function summarizeAccumulatorEntries(entries: AccumulatorEntry[]): string {
   const memberOopTotal = entries
     .filter((entry) => entry.metricType === 'member_oop_applied')
     .reduce((sum, entry) => sum + entry.delta, 0);
+  const deductibleTotal = entries
+    .filter((entry) => entry.metricType === 'deductible_applied')
+    .reduce((sum, entry) => sum + entry.delta, 0);
 
   const lines = [
     `Accumulator entries: ${entries.length}`,
     `Total dollars paid usage: ${dollarTotal.toFixed(2)}`,
     `Total visits used: ${visitTotal}`,
-    `Total member out-of-pocket applied: ${memberOopTotal.toFixed(2)}`
+    `Total member out-of-pocket applied: ${memberOopTotal.toFixed(2)}`,
+    `Total deductible applied: ${deductibleTotal.toFixed(2)}`
   ];
 
   if (entries.length > 0) {
@@ -419,7 +467,7 @@ function formatAccumulatorSummaryForService(
   const usage =
     periodStart && periodEnd
       ? getAccumulatorUsage(entries, periodStart, periodEnd)
-      : { usedDollars: 0, usedVisits: 0, memberOopApplied: 0 };
+      : { usedDollars: 0, usedVisits: 0, memberOopApplied: 0, deductibleApplied: 0 };
 
   const lines = [summarizeAccumulatorEntries(entries)];
 
@@ -593,7 +641,7 @@ function renderHelp(): string {
     '  list claims <memberId> [--db PATH]',
     '  list disputes <claimId> [--db PATH]',
     '  submit claim [--db PATH] --json FILE',
-    '  submit claim [--db PATH] --member-id ID --policy-id ID --provider-id ID --provider-name NAME --date-of-service YYYY-MM-DD [--diagnosis-code CODE]... --line-item "serviceCode|description|billedAmount" [--line-item ...]',
+    '  submit claim [--db PATH] --member-id ID --policy-id ID --provider-id ID --provider-name NAME --date-of-service YYYY-MM-DD [--diagnosis-code CODE]... --line-item "serviceCode|description|billedAmount|dateOfService(optional)" [--line-item ...]',
     '  adjudicate claim <claimId> [--db PATH]',
     '  resolve manual-review <claimId> <lineItemId> <approved|denied> [--db PATH]',
     '  pay claim <claimId> [--db PATH] --line-item-id ID [--line-item-id ...]',
@@ -611,7 +659,7 @@ function renderHelp(): string {
     '  npm run cli -- list claims MEM-0001',
     '  npm run cli -- list policies MEM-0001',
     '  npm run cli -- submit claim --json ./claim.json',
-    '  npm run cli -- submit claim --member-id MEM-0001 --policy-id POL-0001 --provider-id PRV-9001 --provider-name "CityCare Clinic" --date-of-service 2026-03-01 --diagnosis-code J02.9 --line-item "office_visit|Primary care consultation|150"',
+    '  npm run cli -- submit claim --member-id MEM-0001 --policy-id POL-0001 --provider-id PRV-9001 --provider-name "CityCare Clinic" --date-of-service 2026-03-01 --diagnosis-code J02.9 --line-item "office_visit|Primary care consultation|150|2026-03-01"',
     '  npm run cli -- adjudicate claim CLM-0001',
     '  npm run cli -- show accumulator POL-0001 office_visit',
     '  npm run cli -- resolve manual-review CLM-0001 LI-0005 approved',
@@ -628,10 +676,12 @@ function getDbPath(parsed: ParsedArguments): string | undefined {
   return getFlagValue(parsed, 'db');
 }
 
-function parseLineItemFlag(value: string): { serviceCode: string; description: string; billedAmount: number } {
-  const [serviceCode, description, billedAmountText, ...rest] = value.split('|');
+function parseLineItemFlag(value: string): { serviceCode: string; description: string; billedAmount: number; dateOfService?: string } {
+  const [serviceCode, description, billedAmountText, dateOfService, ...rest] = value.split('|');
   if (!serviceCode || !description || !billedAmountText || rest.length > 0) {
-    throw new ValidationError('Each --line-item value must use "serviceCode|description|billedAmount".');
+    throw new ValidationError(
+      'Each --line-item value must use "serviceCode|description|billedAmount" or "serviceCode|description|billedAmount|dateOfService".'
+    );
   }
 
   const billedAmount = Number(billedAmountText);
@@ -642,7 +692,8 @@ function parseLineItemFlag(value: string): { serviceCode: string; description: s
   return {
     serviceCode,
     description,
-    billedAmount
+    billedAmount,
+    ...(dateOfService ? { dateOfService } : {})
   };
 }
 
@@ -669,7 +720,7 @@ function parseClaimRequestFromJsonFile(filePath: string) {
         provider: { providerId: string; name: string };
         dateOfService: string;
         diagnosisCodes: string[];
-        lineItems: Array<{ serviceCode: string; description: string; billedAmount: number }>;
+        lineItems: Array<{ serviceCode: string; description: string; billedAmount: number; dateOfService?: string }>;
       };
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';

@@ -202,7 +202,7 @@ describe('application commands', () => {
         status: 'submitted',
         approvedLineItemCount: 0,
         lineItems: [
-          { lineItemId: 'LI-1', serviceCode: 'office_visit', description: 'Visit', billedAmount: 100, status: 'submitted' }
+          { lineItemId: 'LI-1', serviceCode: 'office_visit', description: 'Visit', billedAmount: 100, dateOfService: '2026-02-01', status: 'submitted' }
         ],
         lineDecisions: []
       }
@@ -235,7 +235,7 @@ describe('application commands', () => {
         status: 'under_review',
         approvedLineItemCount: 0,
         lineItems: [
-          { lineItemId: 'LI-1', serviceCode: 'office_visit', description: 'Visit', billedAmount: 100, status: 'manual_review' }
+          { lineItemId: 'LI-1', serviceCode: 'office_visit', description: 'Visit', billedAmount: 100, dateOfService: '2026-02-01', status: 'manual_review' }
         ],
         lineDecisions: [
           {
@@ -277,7 +277,7 @@ describe('application commands', () => {
         status: 'approved',
         approvedLineItemCount: 1,
         lineItems: [
-          { lineItemId: 'LI-1', serviceCode: 'office_visit', description: 'Visit', billedAmount: 100, status: 'approved' }
+          { lineItemId: 'LI-1', serviceCode: 'office_visit', description: 'Visit', billedAmount: 100, dateOfService: '2026-02-01', status: 'approved' }
         ],
         lineDecisions: []
       }
@@ -340,7 +340,7 @@ describe('application commands', () => {
         status: 'approved',
         approvedLineItemCount: 0,
         lineItems: [
-          { lineItemId: 'LI-1', serviceCode: 'office_visit', description: 'Visit', billedAmount: 100, status: 'denied' }
+          { lineItemId: 'LI-1', serviceCode: 'office_visit', description: 'Visit', billedAmount: 100, dateOfService: '2026-02-01', status: 'denied' }
         ],
         lineDecisions: [
           {
@@ -391,5 +391,98 @@ describe('application commands', () => {
     expect(result.claim.lineItems[0]?.status).toBe('approved');
     expect(result.claim.approvedLineItemCount).toBe(1);
     expect(result.accumulatorEffects.map((entry) => entry.metricType)).toContain('member_oop_applied');
+  });
+
+  it('re-adjudicates overturned disputes instead of force-approving lines', async () => {
+    const claims: Claim[] = [
+      {
+        claimId: 'CLM-1',
+        memberId: 'MEM-1',
+        policyId: 'POL-1',
+        provider: { providerId: 'PRV-1', name: 'Provider' },
+        dateOfService: '2026-02-01',
+        diagnosisCodes: ['J02.9'],
+        status: 'approved',
+        approvedLineItemCount: 0,
+        lineItems: [{ lineItemId: 'LI-1', serviceCode: 'office_visit', description: 'Visit', billedAmount: 80, dateOfService: '2026-02-01', status: 'denied' }],
+        lineDecisions: [
+          {
+            lineItemId: 'LI-1',
+            decision: 'denied',
+            reasonCode: 'SERVICE_NOT_COVERED',
+            reasonText: 'Visit was denied.',
+            memberNextStep: 'Dispute it.',
+            payerAmount: 0,
+            memberResponsibility: 80
+          }
+        ]
+      }
+    ];
+
+    const disputes: Dispute[] = [
+      {
+        disputeId: 'DSP-1',
+        claimId: 'CLM-1',
+        memberId: 'MEM-1',
+        status: 'open',
+        reason: 'Please reconsider',
+        note: null,
+        referencedLineItemIds: ['LI-1'],
+        resolvedAt: null,
+        resolutionNote: null
+      }
+    ];
+
+    const accumulatorRepository = new InMemoryAccumulatorRepository([
+      {
+        memberId: 'MEM-1',
+        policyId: 'POL-1',
+        serviceCode: 'office_visit',
+        benefitPeriodStart: '2026-01-01',
+        benefitPeriodEnd: '2026-12-31',
+        metricType: 'dollars_paid',
+        delta: 50,
+        source: 'claim_line_item',
+        sourceId: 'HIST-LI-1',
+        status: 'posted'
+      }
+    ]);
+
+    const result = await resolveDisputeCommand(
+      {
+        claimRepository: new InMemoryClaimRepository(claims),
+        policyRepository: new InMemoryPolicyRepository([
+          {
+            ...policy,
+            coverageRules: {
+              ...policy.coverageRules,
+              serviceRules: [{ serviceCode: 'office_visit', covered: true, yearlyDollarCap: 100, yearlyVisitCap: 10 }]
+            }
+          }
+        ]),
+        disputeRepository: new InMemoryDisputeRepository(disputes),
+        accumulatorRepository,
+        clock: new FakeClock()
+      },
+      {
+        disputeId: 'DSP-1',
+        outcome: 'overturned',
+        note: 'Please re-run the line through the normal rules.'
+      }
+    );
+
+    expect(result.dispute.status).toBe('overturned');
+    expect(result.claim.lineItems[0]?.status).toBe('manual_review');
+    expect(result.claim.status).toBe('under_review');
+    expect(result.claim.lineDecisions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          lineItemId: 'LI-1',
+          decision: 'manual_review',
+          reasonCode: 'MANUAL_REVIEW_REQUIRED'
+        })
+      ])
+    );
+    expect(result.accumulatorEffects).toEqual([]);
   });
 });

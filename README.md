@@ -6,10 +6,10 @@ This repository contains a working v1 claims processing system for an insurance 
 
 - Create members and member-owned policies.
 - Submit claims with one or more line items.
-- Require a claim-level `dateOfService` for new submissions.
+- Require a claim-level `dateOfService` for new submissions and allow line-item `dateOfService` overrides for mixed-date claims.
 - Adjudicate line items against policy `serviceRules` matched by `serviceCode`.
 - Apply policy-level deductible and coinsurance.
-- Use `dateOfService` to validate policy activity and select the policy-year benefit period.
+- Use each line item's effective `dateOfService` to validate policy activity and select the policy-year benefit period.
 - Enforce yearly dollar caps and yearly visit caps.
 - Enforce `annualOutOfPocketMax` through policy-year member out-of-pocket accumulation.
 - Route partial-payment cases to `manual_review` instead of auto-approving them.

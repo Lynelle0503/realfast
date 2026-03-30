@@ -186,10 +186,12 @@ function parseCreatePolicyRequest(memberId: string, body: unknown): CreatePolicy
 
 function parseCreateClaimLineItemRequest(value: unknown, index: number): CreateClaimLineItemInput {
   const record = getObject(value, `lineItems[${index}]`);
+  const dateOfService = getOptionalString(record.dateOfService, `lineItems[${index}].dateOfService`);
   return {
     serviceCode: getString(record.serviceCode, `lineItems[${index}].serviceCode`),
     description: getString(record.description, `lineItems[${index}].description`),
-    billedAmount: getNumber(record.billedAmount, `lineItems[${index}].billedAmount`)
+    billedAmount: getNumber(record.billedAmount, `lineItems[${index}].billedAmount`),
+    ...(dateOfService !== undefined ? { dateOfService } : {})
   };
 }
 
@@ -332,6 +334,7 @@ function mapClaim(claim: Claim): JsonValue {
       serviceCode: lineItem.serviceCode,
       description: lineItem.description,
       billedAmount: lineItem.billedAmount,
+      dateOfService: lineItem.dateOfService,
       status: lineItem.status
     })),
     lineDecisions: claim.lineDecisions.map(mapLineDecision)

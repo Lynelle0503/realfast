@@ -10,7 +10,7 @@ interface AccumulatorRow {
   service_code: string;
   benefit_period_start: string;
   benefit_period_end: string;
-  metric_type: 'dollars_paid' | 'visits_used' | 'member_oop_applied';
+  metric_type: 'dollars_paid' | 'visits_used' | 'member_oop_applied' | 'deductible_applied';
   delta: number;
   source: 'claim_line_item';
   source_id: string;

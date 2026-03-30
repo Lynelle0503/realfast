@@ -19,6 +19,7 @@ interface ClaimLineItemRow {
   service_code: string;
   description: string;
   billed_amount: number;
+  date_of_service: string | null;
   status: LineItemStatus;
 }
 
@@ -38,6 +39,7 @@ function mapClaimLineItemRow(row: ClaimLineItemRow): ClaimLineItem {
     serviceCode: row.service_code,
     description: row.description,
     billedAmount: row.billed_amount,
+    dateOfService: row.date_of_service,
     status: row.status
   };
 }

@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS claim_line_items (
   service_code TEXT NOT NULL,
   description TEXT NOT NULL,
   billed_amount REAL NOT NULL,
+  date_of_service TEXT,
   status TEXT NOT NULL,
   FOREIGN KEY (claim_id) REFERENCES claims(id)
 );
