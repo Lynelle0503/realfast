@@ -19,8 +19,6 @@
       </div>
     </header>
 
-    <div class="topbar-divider"></div>
-
     <div class="app-shell sidebar-expanded" id="app-shell">
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-head">
@@ -117,16 +115,16 @@
               </label>
               <p id="submit-claim-note" class="muted"></p>
               <label>Provider ID
-                <input id="provider-id" type="text" value="PRV-9001" required />
+                <input id="provider-id" type="text" value="PRV-9001" placeholder="PRV-9001" required />
               </label>
               <label>Provider name
-                <input id="provider-name" type="text" value="Downtown Clinic" required />
+                <input id="provider-name" type="text" value="Downtown Clinic" placeholder="Downtown Clinic" required />
               </label>
               <label>Date of service
                 <input id="submit-date-of-service" type="date" value="2026-03-01" required />
               </label>
               <label>Diagnosis codes
-                <input id="diagnosis-codes" type="text" value="J02.9" />
+                <input id="diagnosis-codes" type="text" value="J02.9" placeholder="J02.9, R50.9" />
               </label>
               <div class="section-row">
                 <strong>Line items</strong>
@@ -184,10 +182,16 @@
                   <span class="action-chip">POST dispute</span>
                 </div>
                 <label>Reason
-                  <input id="dispute-reason" type="text" value="I disagree with the denial." required />
+                  <input
+                    id="dispute-reason"
+                    type="text"
+                    value="I disagree with the denial."
+                    placeholder="I believe this service should be covered."
+                    required
+                  />
                 </label>
                 <label>Note
-                  <textarea id="dispute-note" rows="2">Please review the service decision.</textarea>
+                  <textarea id="dispute-note" rows="2" placeholder="Please review the service decision.">Please review the service decision.</textarea>
                 </label>
                 <div id="dispute-line-items" class="stack"></div>
                 <button type="submit">Open dispute</button>
@@ -208,7 +212,7 @@
                   </select>
                 </label>
                 <label>Resolution note
-                  <textarea id="resolve-dispute-note" rows="2">Reviewed and finalized.</textarea>
+                  <textarea id="resolve-dispute-note" rows="2" placeholder="Reviewed and finalized.">Reviewed and finalized.</textarea>
                 </label>
                 <button type="submit">Resolve dispute</button>
               </form>
