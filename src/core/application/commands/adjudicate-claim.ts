@@ -13,7 +13,7 @@ export async function adjudicateClaimCommand(
     clock: Clock;
   },
   claimId: string
-): Promise<{ claim: Claim }> {
+): Promise<{ claim: Claim; accumulatorEffects: Awaited<ReturnType<AccumulatorRepository['listByPolicyAndService']>> }> {
   const claim = await dependencies.claimRepository.getById(claimId);
   if (!claim) {
     throw new NotFoundError(`Claim ${claimId} was not found.`);
@@ -56,5 +56,5 @@ export async function adjudicateClaimCommand(
   await dependencies.claimRepository.update(updatedClaim);
   await dependencies.accumulatorRepository.appendMany(result.accumulatorEntries);
 
-  return { claim: updatedClaim };
+  return { claim: updatedClaim, accumulatorEffects: result.accumulatorEntries };
 }

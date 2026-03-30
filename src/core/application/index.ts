@@ -10,6 +10,7 @@ export * from './errors/business-rule-error.js';
 export * from './errors/not-found-error.js';
 export * from './errors/validation-error.js';
 export * from './queries/get-claim.js';
+export * from './queries/get-dispute.js';
 export * from './queries/get-member.js';
 export * from './queries/get-policy.js';
 export * from './queries/list-claim-disputes.js';

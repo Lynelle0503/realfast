@@ -494,9 +494,13 @@ components:
         decision:
           $ref: '#/components/schemas/LineDecisionType'
         reasonCode:
-          $ref: '#/components/schemas/ReasonCode'
+          oneOf:
+            - $ref: '#/components/schemas/ReasonCode'
+            - type: 'null'
         reasonText:
-          type: string
+          oneOf:
+            - type: string
+            - type: 'null'
         memberNextStep:
           oneOf:
             - type: string

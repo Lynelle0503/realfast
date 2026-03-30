@@ -12,7 +12,7 @@ export interface Dispute {
 
 export interface CreateDisputeInput {
   claimId: string;
-  memberId: string;
+  memberId?: string;
   reason: string;
   note?: string;
   referencedLineItemIds?: string[];
