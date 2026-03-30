@@ -4,9 +4,6 @@ import { tmpdir } from 'node:os';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createMember } from '../../src/core/application/commands/create-member.js';
-import { createPolicy } from '../../src/core/application/commands/create-policy.js';
-import { createSqliteAppContext } from '../../src/infra/app/context.js';
 import { runCli } from '../../src/infra/cli/index.js';
 
 interface MemoryStream {
@@ -43,8 +40,12 @@ describe('cli', () => {
 
     expect(exitCode).toBe(0);
     expect(stdout.output).toContain('Claims CLI');
-    expect(stdout.output).toContain('seed demo-data');
-    expect(stdout.output).toContain('show claim <claimId>');
+    expect(stdout.output).toContain('create member');
+    expect(stdout.output).toContain('create policy <memberId>');
+    expect(stdout.output).toContain('list claims <memberId>');
+    expect(stdout.output).toContain('list disputes <claimId>');
+    expect(stdout.output).toContain('show dispute <disputeId>');
+    expect(stdout.output).toContain('show accumulator <policyId> <serviceCode>');
     expect(stderr.output).toBe('');
   });
 
@@ -75,6 +76,14 @@ describe('cli', () => {
     expect(exitCode).toBe(0);
     expect(stdout.output).toContain('Policy POL-0001');
     expect(stdout.output).toContain('Type: Health PPO');
+    expect(stdout.output).toContain('office_visit: covered=true');
+
+    stdout = createMemoryStream();
+    stderr = createMemoryStream();
+    exitCode = await runCli(['list', 'claims', 'MEM-0001', '--db', dbPath], { stdout, stderr });
+    expect(exitCode).toBe(0);
+    expect(stdout.output).toContain('Claim CLM-0001');
+    expect(stdout.output).toContain('Approved line items: 3');
 
     stdout = createMemoryStream();
     stderr = createMemoryStream();
@@ -82,9 +91,20 @@ describe('cli', () => {
     expect(exitCode).toBe(0);
     expect(stdout.output).toContain('Claim CLM-0001');
     expect(stdout.output).toContain('Status: under_review');
+    expect(stdout.output).toContain(
+      'Status explanation: under_review because line item(s) LI-0005 are still in manual_review.'
+    );
+    expect(stdout.output).toContain(
+      'Dispute status: 1 dispute(s) exist for this claim (DSP-0001). In v1, disputes do not automatically change claim status.'
+    );
     expect(stdout.output).toContain('Approved line items: 3');
     expect(stdout.output).toContain('Reason: This service is not covered under your policy.');
-    expect(stdout.output).toContain('Reason: This service is still under review because it needs additional review before a final decision can be made.');
+    expect(stdout.output).toContain('Service rule: covered=false');
+    expect(stdout.output).toContain('Why this line was denied: the matched service rule is not covered under this policy.');
+    expect(stdout.output).toContain(
+      'Reason: This service is still under review because it needs additional review before a final decision can be made.'
+    );
+    expect(stdout.output).toContain('Manual review detail: automatic adjudication would have paid 80.00');
 
     stdout = createMemoryStream();
     stderr = createMemoryStream();
@@ -95,6 +115,9 @@ describe('cli', () => {
     expect(exitCode).toBe(0);
     expect(stdout.output).toContain('Resolved manual review for LI-0005 on claim CLM-0001.');
     expect(stdout.output).toContain('Status: approved');
+    expect(stdout.output).toContain(
+      'Status explanation: approved because every line item is resolved. 4 line item(s) were approved or paid and 1 were denied.'
+    );
     expect(stdout.output).toContain('Approved line items: 4');
 
     stdout = createMemoryStream();
@@ -103,6 +126,7 @@ describe('cli', () => {
     expect(exitCode).toBe(0);
     expect(stdout.output).toContain('Recorded payment for claim CLM-0001.');
     expect(stdout.output).toContain('Status: paid');
+    expect(stdout.output).toContain('Status explanation: paid because all approved line items have been marked as paid.');
 
     stdout = createMemoryStream();
     stderr = createMemoryStream();
@@ -112,50 +136,88 @@ describe('cli', () => {
     );
     expect(exitCode).toBe(0);
     expect(stdout.output).toContain('Opened dispute');
+    expect(stdout.output).toContain('Dispute DSP-0002');
     expect(stdout.output).toContain('Referenced line items: LI-0004');
+    expect(stdout.output).toContain('Next: run "npm run cli -- list disputes CLM-0001 --db');
+
+    stdout = createMemoryStream();
+    stderr = createMemoryStream();
+    exitCode = await runCli(['list', 'disputes', 'CLM-0001', '--db', dbPath], { stdout, stderr });
+    expect(exitCode).toBe(0);
+    expect(stdout.output).toContain('Dispute DSP-0001');
+    expect(stdout.output).toContain('Dispute DSP-0002');
+
+    stdout = createMemoryStream();
+    stderr = createMemoryStream();
+    exitCode = await runCli(['show', 'dispute', 'DSP-0002', '--db', dbPath], { stdout, stderr });
+    expect(exitCode).toBe(0);
+    expect(stdout.output).toContain('Dispute DSP-0002');
+    expect(stdout.output).toContain('Reason: Please review this denial.');
+
+    stdout = createMemoryStream();
+    stderr = createMemoryStream();
+    exitCode = await runCli(['show', 'accumulator', 'POL-0001', 'office_visit', '--db', dbPath], { stdout, stderr });
+    expect(exitCode).toBe(0);
+    expect(stdout.output).toContain('Accumulator for policy POL-0001 service office_visit');
+    expect(stdout.output).toContain('Total dollars paid usage: 180.00');
+    expect(stdout.output).toContain('Total visits used: 3');
+    expect(stdout.output).toContain('Service rule summary: covered=true, yearlyDollarCap=180, yearlyVisitCap=10');
+    expect(stdout.output).toContain('Remaining yearly dollar benefit: 0.00');
+    expect(stdout.output).toContain('Remaining yearly visit benefit: 7');
   });
 
-  it('submits claims from json files and flags', async () => {
+  it('creates members and policies, then submits claims from json files and flags', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'claims-cli-submit-'));
     tempDirs.push(dir);
     const dbPath = join(dir, 'claims.db');
-
-    const appContext = createSqliteAppContext({ filePath: dbPath });
-    const member = await createMember(
-      { memberRepository: appContext.memberRepository, idGenerator: appContext.idGenerator },
-      { fullName: 'Demo Member', dateOfBirth: '1990-01-01' }
-    );
-    const policy = await createPolicy(
-      {
-        memberRepository: appContext.memberRepository,
-        policyRepository: appContext.policyRepository,
-        idGenerator: appContext.idGenerator
-      },
-      {
-        memberId: member.memberId,
-        policyType: 'Health PPO',
-        effectiveDate: '2026-01-01',
-        coverageRules: {
-          benefitPeriod: 'policy_year',
-          deductible: 0,
-          coinsurancePercent: 80,
-          annualOutOfPocketMax: 3000,
-          serviceRules: [{ serviceCode: 'office_visit', covered: true, yearlyDollarCap: 1000, yearlyVisitCap: 10 }]
-        }
-      }
-    );
-    appContext.close();
 
     let stdout = createMemoryStream();
     let stderr = createMemoryStream();
     let exitCode: number;
 
+    exitCode = await runCli(
+      ['create', 'member', '--db', dbPath, '--full-name', 'Demo Member', '--date-of-birth', '1990-01-01'],
+      { stdout, stderr }
+    );
+    expect(exitCode).toBe(0);
+    expect(stdout.output).toContain('Created member MEM-0001.');
+
+    stdout = createMemoryStream();
+    stderr = createMemoryStream();
+    exitCode = await runCli(
+      [
+        'create',
+        'policy',
+        'MEM-0001',
+        '--db',
+        dbPath,
+        '--policy-type',
+        'Health PPO',
+        '--effective-date',
+        '2026-01-01',
+        '--benefit-period',
+        'policy_year',
+        '--deductible',
+        '0',
+        '--coinsurance-percent',
+        '80',
+        '--annual-out-of-pocket-max',
+        '3000',
+        '--service-rule',
+        'office_visit|true|1000|10'
+      ],
+      { stdout, stderr }
+    );
+    expect(exitCode).toBe(0);
+    expect(stdout.output).toContain('Created policy POL-0001.');
+    expect(stdout.output).toContain('office_visit: covered=true');
+
     const jsonPath = join(dir, 'claim.json');
     writeFileSync(
       jsonPath,
       JSON.stringify({
-        memberId: member.memberId,
-        policyId: policy.policyId,
+        memberId: 'MEM-0001',
+        policyId: 'POL-0001',
         provider: { providerId: 'PRV-7777', name: 'Northside Medical' },
         diagnosisCodes: ['R50.9'],
         lineItems: [{ serviceCode: 'office_visit', description: 'Urgent care visit', billedAmount: 125 }]
@@ -168,6 +230,19 @@ describe('cli', () => {
     expect(exitCode).toBe(0);
     expect(stdout.output).toContain('Created claim CLM-0001.');
     expect(stdout.output).toContain('Status: submitted');
+    expect(stdout.output).toContain('Status explanation: submitted because adjudication has not started yet.');
+
+    stdout = createMemoryStream();
+    stderr = createMemoryStream();
+    exitCode = await runCli(['adjudicate', 'claim', 'CLM-0001', '--db', dbPath], { stdout, stderr });
+    expect(exitCode).toBe(0);
+    expect(stdout.output).toContain('Adjudicated claim CLM-0001.');
+    expect(stdout.output).toContain('Status explanation: approved because every line item is resolved and adjudication is complete.');
+    expect(stdout.output).toContain('Accumulator effects from this adjudication:');
+    expect(stdout.output).toContain('Service: office_visit');
+    expect(stdout.output).toContain('Total dollars paid usage: 100.00');
+    expect(stdout.output).toContain('Total visits used: 1');
+    expect(stdout.output).toContain('Remaining yearly dollar benefit: 900.00');
 
     stdout = createMemoryStream();
     stderr = createMemoryStream();
@@ -178,9 +253,9 @@ describe('cli', () => {
         '--db',
         dbPath,
         '--member-id',
-        member.memberId,
+        'MEM-0001',
         '--policy-id',
-        policy.policyId,
+        'POL-0001',
         '--provider-id',
         'PRV-9999',
         '--provider-name',
