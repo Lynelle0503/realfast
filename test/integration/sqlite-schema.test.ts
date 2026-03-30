@@ -77,4 +77,22 @@ describe('sqlite schema', () => {
 
     closeDatabase(db);
   });
+
+  it('allows approved line decisions to omit reason details', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'claims-columns-'));
+    tempDirs.push(dir);
+
+    const db = initializeDatabase({ filePath: join(dir, 'claims.db') });
+
+    const columns = db.prepare('PRAGMA table_info(line_decisions)').all() as Array<{ name: string; notnull: number }>;
+
+    expect(columns.find((column) => column.name === 'reason_code')).toEqual(
+      expect.objectContaining({ name: 'reason_code', notnull: 0 })
+    );
+    expect(columns.find((column) => column.name === 'reason_text')).toEqual(
+      expect.objectContaining({ name: 'reason_text', notnull: 0 })
+    );
+
+    closeDatabase(db);
+  });
 });

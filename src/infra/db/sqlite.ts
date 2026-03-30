@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -29,6 +29,16 @@ export function initializeDatabase(options: SqliteDatabaseOptions = {}): Databas
   const db = openDatabase(options);
   applySchema(db);
   return db;
+}
+
+export function recreateDatabase(options: SqliteDatabaseOptions = {}): Database.Database {
+  const filePath = options.filePath ?? DEFAULT_DB_PATH;
+
+  if (existsSync(filePath)) {
+    rmSync(filePath, { force: true });
+  }
+
+  return initializeDatabase({ filePath });
 }
 
 export function closeDatabase(db: Database.Database): void {
