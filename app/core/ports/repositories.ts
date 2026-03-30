@@ -7,6 +7,7 @@ import type { Policy } from '../domain/policy.js';
 export interface MemberRepository {
   create(member: Member): Promise<void>;
   getById(memberId: string): Promise<Member | null>;
+  listAll(): Promise<Member[]>;
 }
 
 export interface PolicyRepository {

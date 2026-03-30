@@ -1,21 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
-import { adjudicateClaimCommand } from '../../src/core/application/commands/adjudicate-claim.js';
-import { createClaim } from '../../src/core/application/commands/create-claim.js';
-import { createMember } from '../../src/core/application/commands/create-member.js';
-import { createPolicy } from '../../src/core/application/commands/create-policy.js';
-import { markClaimPayment } from '../../src/core/application/commands/mark-claim-payment.js';
-import { openDispute } from '../../src/core/application/commands/open-dispute.js';
-import { resolveManualReviewCommand } from '../../src/core/application/commands/resolve-manual-review.js';
-import { getClaim } from '../../src/core/application/queries/get-claim.js';
-import { listClaimDisputes } from '../../src/core/application/queries/list-claim-disputes.js';
-import { SystemClock } from '../../src/infra/db/support/clock.js';
-import { DeterministicIdGenerator } from '../../src/infra/db/support/ids.js';
-import { SqliteAccumulatorRepository } from '../../src/infra/db/repositories/sqlite-accumulator-repository.js';
-import { SqliteClaimRepository } from '../../src/infra/db/repositories/sqlite-claim-repository.js';
-import { SqliteDisputeRepository } from '../../src/infra/db/repositories/sqlite-dispute-repository.js';
-import { SqliteMemberRepository } from '../../src/infra/db/repositories/sqlite-member-repository.js';
-import { SqlitePolicyRepository } from '../../src/infra/db/repositories/sqlite-policy-repository.js';
+import { adjudicateClaimCommand } from '../../app/core/application/commands/adjudicate-claim.js';
+import { createClaim } from '../../app/core/application/commands/create-claim.js';
+import { createMember } from '../../app/core/application/commands/create-member.js';
+import { createPolicy } from '../../app/core/application/commands/create-policy.js';
+import { markClaimPayment } from '../../app/core/application/commands/mark-claim-payment.js';
+import { openDispute } from '../../app/core/application/commands/open-dispute.js';
+import { resolveManualReviewCommand } from '../../app/core/application/commands/resolve-manual-review.js';
+import { getClaim } from '../../app/core/application/queries/get-claim.js';
+import { listClaimDisputes } from '../../app/core/application/queries/list-claim-disputes.js';
+import { SystemClock } from '../../app/infra/db/support/clock.js';
+import { DeterministicIdGenerator } from '../../app/infra/db/support/ids.js';
+import { SqliteAccumulatorRepository } from '../../app/infra/db/repositories/sqlite-accumulator-repository.js';
+import { SqliteClaimRepository } from '../../app/infra/db/repositories/sqlite-claim-repository.js';
+import { SqliteDisputeRepository } from '../../app/infra/db/repositories/sqlite-dispute-repository.js';
+import { SqliteMemberRepository } from '../../app/infra/db/repositories/sqlite-member-repository.js';
+import { SqlitePolicyRepository } from '../../app/infra/db/repositories/sqlite-policy-repository.js';
 import { withSqliteDatabase } from './sqlite-test-helpers.js';
 
 const createDb = withSqliteDatabase();

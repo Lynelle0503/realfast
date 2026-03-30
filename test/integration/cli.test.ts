@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { runCli } from '../../src/infra/cli/index.js';
+import { runCli } from '../../app/infra/cli/index.js';
 
 interface MemoryStream {
   output: string;

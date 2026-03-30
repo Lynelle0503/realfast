@@ -14,6 +14,7 @@ export * from './queries/get-dispute.js';
 export * from './queries/get-member.js';
 export * from './queries/get-policy.js';
 export * from './queries/list-claim-disputes.js';
+export * from './queries/list-members.js';
 export * from './queries/list-member-claims.js';
 export * from './queries/list-member-policies.js';
 export * from './services/accumulator-service.js';

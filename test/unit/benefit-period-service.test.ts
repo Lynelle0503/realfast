@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getBenefitPeriodWindow } from '../../src/core/application/services/benefit-period-service.js';
+import { getBenefitPeriodWindow } from '../../app/core/application/services/benefit-period-service.js';
 
 describe('benefit period service', () => {
   it('uses policy anniversary boundaries', () => {

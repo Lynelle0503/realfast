@@ -17,6 +17,7 @@ import { getDispute } from '../../core/application/queries/get-dispute.js';
 import { getMember } from '../../core/application/queries/get-member.js';
 import { getPolicy } from '../../core/application/queries/get-policy.js';
 import { listClaimDisputes } from '../../core/application/queries/list-claim-disputes.js';
+import { listMembers } from '../../core/application/queries/list-members.js';
 import { listMemberClaims } from '../../core/application/queries/list-member-claims.js';
 import { listMemberPolicies } from '../../core/application/queries/list-member-policies.js';
 import type { AccumulatorEntry } from '../../core/domain/accumulator.js';
@@ -407,6 +408,11 @@ async function routeRequest(dependencies: ApiDependencies, request: IncomingMess
   if (method === 'POST' && resourceSegments.length === 1 && resourceSegments[0] === 'members') {
     const member = await createMember({ memberRepository: dependencies.memberRepository, idGenerator: dependencies.idGenerator }, parseCreateMemberRequest(await readJsonBody(request)));
     return json(201, mapMember(member));
+  }
+
+  if (method === 'GET' && resourceSegments.length === 1 && resourceSegments[0] === 'members') {
+    const members = await listMembers(dependencies.memberRepository);
+    return json(200, { items: members.map(mapMember) });
   }
 
   if (method === 'GET' && resourceSegments.length === 2 && resourceSegments[0] === 'members') {

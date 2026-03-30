@@ -7,6 +7,22 @@ servers:
   - url: /api/v1
 paths:
   /members:
+    get:
+      summary: List members
+      operationId: listMembers
+      responses:
+        '200':
+          description: Members
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Member'
     post:
       summary: Create a member
       operationId: createMember

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyClaimRollup } from '../../src/core/application/services/claim-rollup-service.js';
-import type { Claim } from '../../src/core/domain/claim.js';
+import { applyClaimRollup } from '../../app/core/application/services/claim-rollup-service.js';
+import type { Claim } from '../../app/core/domain/claim.js';
 
 const baseClaim: Claim = {
   claimId: 'CLM-1',

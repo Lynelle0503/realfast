@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "cli": "tsx src/infra/cli/index.ts",
+    "cli": "node --import tsx app/infra/cli/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "seed": "tsx src/infra/db/seed.ts",
-    "start:api": "tsx src/infra/http/server.ts"
+    "seed": "node --import tsx app/infra/db/seed.ts",
+    "start:api": "node --import tsx app/infra/http/server.ts",
+    "start:ui": "node --import tsx app/infra/http/server.ts"
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0"

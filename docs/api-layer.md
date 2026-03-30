@@ -20,6 +20,8 @@ Base path:
 
 - `POST /api/v1/members`
   Create a member.
+- `GET /api/v1/members`
+  List members.
 - `GET /api/v1/members/{memberId}`
   Fetch member details.
 - `GET /api/v1/members/{memberId}/policies`

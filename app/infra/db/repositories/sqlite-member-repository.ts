@@ -37,4 +37,16 @@ export class SqliteMemberRepository implements MemberRepository {
 
     return row ? mapMemberRow(row) : null;
   }
+
+  async listAll(): Promise<Member[]> {
+    const rows = this.db
+      .prepare(
+        `SELECT id, full_name, date_of_birth
+         FROM members
+         ORDER BY id`
+      )
+      .all() as MemberRow[];
+
+    return rows.map(mapMemberRow);
+  }
 }

@@ -7,6 +7,7 @@ import { createMember } from '../../core/application/commands/create-member.js';
 import { createPolicy } from '../../core/application/commands/create-policy.js';
 import { markClaimPayment } from '../../core/application/commands/mark-claim-payment.js';
 import { openDispute } from '../../core/application/commands/open-dispute.js';
+import type { CreatePolicyInput } from '../../core/domain/policy.js';
 import { SystemClock } from './support/clock.js';
 import { DeterministicIdGenerator } from './support/ids.js';
 import { SqliteAccumulatorRepository } from './repositories/sqlite-accumulator-repository.js';
@@ -33,6 +34,109 @@ class FixedClock extends SystemClock {
   override now(): Date {
     return this.value;
   }
+}
+
+const dummyMembers = [
+  { fullName: 'Aarav Mehta', dateOfBirth: '1988-07-14' },
+  { fullName: 'Maya Rao', dateOfBirth: '1991-11-03' },
+  { fullName: 'Riya Shah', dateOfBirth: '1985-05-22' },
+  { fullName: 'Devika Nair', dateOfBirth: '1993-09-09' }
+] as const;
+
+const dummyPolicyCatalog = {
+  healthPpoStarter: {
+    policyType: 'Health PPO',
+    effectiveDate: '2026-01-01',
+    coverageRules: {
+      benefitPeriod: 'policy_year' as const,
+      deductible: 0,
+      coinsurancePercent: 80,
+      annualOutOfPocketMax: 3000,
+      serviceRules: [
+        { serviceCode: 'office_visit', covered: true, yearlyDollarCap: 180, yearlyVisitCap: 10 },
+        { serviceCode: 'lab_test', covered: true, yearlyDollarCap: 500, yearlyVisitCap: null },
+        { serviceCode: 'therapy_session', covered: true, yearlyDollarCap: 800, yearlyVisitCap: 5 },
+        { serviceCode: 'prescription', covered: false, yearlyDollarCap: null, yearlyVisitCap: null },
+        { serviceCode: 'imaging', covered: true, yearlyDollarCap: 200, yearlyVisitCap: null }
+      ]
+    }
+  },
+  healthHmoCore: {
+    policyType: 'Health HMO',
+    effectiveDate: '2026-01-01',
+    coverageRules: {
+      benefitPeriod: 'policy_year' as const,
+      deductible: 0,
+      coinsurancePercent: 80,
+      annualOutOfPocketMax: 2500,
+      serviceRules: [
+        { serviceCode: 'office_visit', covered: true, yearlyDollarCap: 1000, yearlyVisitCap: 12 },
+        { serviceCode: 'lab_test', covered: true, yearlyDollarCap: 600, yearlyVisitCap: null }
+      ]
+    }
+  },
+  rehabPpo: {
+    policyType: 'Health PPO',
+    effectiveDate: '2026-01-01',
+    coverageRules: {
+      benefitPeriod: 'policy_year' as const,
+      deductible: 0,
+      coinsurancePercent: 80,
+      annualOutOfPocketMax: 3500,
+      serviceRules: [
+        { serviceCode: 'office_visit', covered: true, yearlyDollarCap: 1000, yearlyVisitCap: 12 },
+        { serviceCode: 'therapy_session', covered: true, yearlyDollarCap: 1000, yearlyVisitCap: 8 }
+      ]
+    }
+  },
+  familyPpo: {
+    policyType: 'Family PPO',
+    effectiveDate: '2026-02-01',
+    coverageRules: {
+      benefitPeriod: 'policy_year' as const,
+      deductible: 100,
+      coinsurancePercent: 75,
+      annualOutOfPocketMax: 4000,
+      serviceRules: [
+        { serviceCode: 'office_visit', covered: true, yearlyDollarCap: 1200, yearlyVisitCap: 12 },
+        { serviceCode: 'lab_test', covered: true, yearlyDollarCap: 900, yearlyVisitCap: null },
+        { serviceCode: 'imaging', covered: true, yearlyDollarCap: 700, yearlyVisitCap: null }
+      ]
+    }
+  },
+  preventiveHmo: {
+    policyType: 'Preventive HMO',
+    effectiveDate: '2026-03-01',
+    coverageRules: {
+      benefitPeriod: 'policy_year' as const,
+      deductible: 25,
+      coinsurancePercent: 90,
+      annualOutOfPocketMax: 2200,
+      serviceRules: [
+        { serviceCode: 'office_visit', covered: true, yearlyDollarCap: 900, yearlyVisitCap: 8 },
+        { serviceCode: 'lab_test', covered: true, yearlyDollarCap: 450, yearlyVisitCap: null },
+        { serviceCode: 'prescription', covered: false, yearlyDollarCap: null, yearlyVisitCap: null }
+      ]
+    }
+  }
+} as const;
+
+// Persisted policies are member-owned in the current domain model, so the seed
+// uses this catalog to create reusable dummy policies and then links each one to
+// a member instead of storing unattached policy rows.
+
+function clonePolicyTemplate(template: (typeof dummyPolicyCatalog)[keyof typeof dummyPolicyCatalog]): Omit<CreatePolicyInput, 'memberId'> {
+  return {
+    policyType: template.policyType,
+    effectiveDate: template.effectiveDate,
+    coverageRules: {
+      benefitPeriod: template.coverageRules.benefitPeriod,
+      deductible: template.coverageRules.deductible,
+      coinsurancePercent: template.coverageRules.coinsurancePercent,
+      annualOutOfPocketMax: template.coverageRules.annualOutOfPocketMax,
+      serviceRules: template.coverageRules.serviceRules.map((serviceRule) => ({ ...serviceRule }))
+    }
+  };
 }
 
 function countRows(db: Database.Database, tableName: string): number {
@@ -69,29 +173,12 @@ async function populateSeedData(db: Database.Database): Promise<void> {
   const idGenerator = new DeterministicIdGenerator();
   const adjudicationClock = new FixedClock(new Date('2026-03-01T00:00:00.000Z'));
 
-  const member1 = await createMember(
-    { memberRepository, idGenerator },
-    { fullName: 'Aarav Mehta', dateOfBirth: '1988-07-14' }
-  );
+  const member1 = await createMember({ memberRepository, idGenerator }, dummyMembers[0]);
   const policy1 = await createPolicy(
     { memberRepository, policyRepository, idGenerator },
     {
       memberId: member1.memberId,
-      policyType: 'Health PPO',
-      effectiveDate: '2026-01-01',
-      coverageRules: {
-        benefitPeriod: 'policy_year',
-        deductible: 0,
-        coinsurancePercent: 80,
-        annualOutOfPocketMax: 3000,
-        serviceRules: [
-          { serviceCode: 'office_visit', covered: true, yearlyDollarCap: 180, yearlyVisitCap: 10 },
-          { serviceCode: 'lab_test', covered: true, yearlyDollarCap: 500, yearlyVisitCap: null },
-          { serviceCode: 'therapy_session', covered: true, yearlyDollarCap: 800, yearlyVisitCap: 5 },
-          { serviceCode: 'prescription', covered: false, yearlyDollarCap: null, yearlyVisitCap: null },
-          { serviceCode: 'imaging', covered: true, yearlyDollarCap: 200, yearlyVisitCap: null }
-        ]
-      }
+      ...clonePolicyTemplate(dummyPolicyCatalog.healthPpoStarter)
     }
   );
 
@@ -184,26 +271,20 @@ async function populateSeedData(db: Database.Database): Promise<void> {
     }
   );
 
-  const member2 = await createMember(
-    { memberRepository, idGenerator },
-    { fullName: 'Maya Rao', dateOfBirth: '1991-11-03' }
+  await createPolicy(
+    { memberRepository, policyRepository, idGenerator },
+    {
+      memberId: member1.memberId,
+      ...clonePolicyTemplate(dummyPolicyCatalog.familyPpo)
+    }
   );
+
+  const member2 = await createMember({ memberRepository, idGenerator }, dummyMembers[1]);
   const policy2 = await createPolicy(
     { memberRepository, policyRepository, idGenerator },
     {
       memberId: member2.memberId,
-      policyType: 'Health HMO',
-      effectiveDate: '2026-01-01',
-      coverageRules: {
-        benefitPeriod: 'policy_year',
-        deductible: 0,
-        coinsurancePercent: 80,
-        annualOutOfPocketMax: 2500,
-        serviceRules: [
-          { serviceCode: 'office_visit', covered: true, yearlyDollarCap: 1000, yearlyVisitCap: 12 },
-          { serviceCode: 'lab_test', covered: true, yearlyDollarCap: 600, yearlyVisitCap: null }
-        ]
-      }
+      ...clonePolicyTemplate(dummyPolicyCatalog.healthHmoCore)
     }
   );
 
@@ -226,26 +307,12 @@ async function populateSeedData(db: Database.Database): Promise<void> {
     claim2.claimId
   );
 
-  const member3 = await createMember(
-    { memberRepository, idGenerator },
-    { fullName: 'Riya Shah', dateOfBirth: '1985-05-22' }
-  );
+  const member3 = await createMember({ memberRepository, idGenerator }, dummyMembers[2]);
   const policy3 = await createPolicy(
     { memberRepository, policyRepository, idGenerator },
     {
       memberId: member3.memberId,
-      policyType: 'Health PPO',
-      effectiveDate: '2026-01-01',
-      coverageRules: {
-        benefitPeriod: 'policy_year',
-        deductible: 0,
-        coinsurancePercent: 80,
-        annualOutOfPocketMax: 3500,
-        serviceRules: [
-          { serviceCode: 'office_visit', covered: true, yearlyDollarCap: 1000, yearlyVisitCap: 12 },
-          { serviceCode: 'therapy_session', covered: true, yearlyDollarCap: 1000, yearlyVisitCap: 8 }
-        ]
-      }
+      ...clonePolicyTemplate(dummyPolicyCatalog.rehabPpo)
     }
   );
 
@@ -273,6 +340,15 @@ async function populateSeedData(db: Database.Database): Promise<void> {
     {
       claimId: claim3.claimId,
       lineItemIds: adjudicatedClaim3.claim.lineItems.map((lineItem) => lineItem.lineItemId)
+    }
+  );
+
+  const member4 = await createMember({ memberRepository, idGenerator }, dummyMembers[3]);
+  await createPolicy(
+    { memberRepository, policyRepository, idGenerator },
+    {
+      memberId: member4.memberId,
+      ...clonePolicyTemplate(dummyPolicyCatalog.preventiveHmo)
     }
   );
 }

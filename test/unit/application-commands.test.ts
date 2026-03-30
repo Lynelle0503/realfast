@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { adjudicateClaimCommand } from '../../src/core/application/commands/adjudicate-claim.js';
-import { createClaim } from '../../src/core/application/commands/create-claim.js';
-import { markClaimPayment } from '../../src/core/application/commands/mark-claim-payment.js';
-import { openDispute } from '../../src/core/application/commands/open-dispute.js';
-import { resolveManualReviewCommand } from '../../src/core/application/commands/resolve-manual-review.js';
-import { BusinessRuleError } from '../../src/core/application/errors/business-rule-error.js';
-import type { AccumulatorEntry } from '../../src/core/domain/accumulator.js';
-import type { Claim } from '../../src/core/domain/claim.js';
-import type { Dispute } from '../../src/core/domain/dispute.js';
-import type { Member } from '../../src/core/domain/member.js';
-import type { Policy } from '../../src/core/domain/policy.js';
+import { adjudicateClaimCommand } from '../../app/core/application/commands/adjudicate-claim.js';
+import { createClaim } from '../../app/core/application/commands/create-claim.js';
+import { markClaimPayment } from '../../app/core/application/commands/mark-claim-payment.js';
+import { openDispute } from '../../app/core/application/commands/open-dispute.js';
+import { resolveManualReviewCommand } from '../../app/core/application/commands/resolve-manual-review.js';
+import { BusinessRuleError } from '../../app/core/application/errors/business-rule-error.js';
+import type { AccumulatorEntry } from '../../app/core/domain/accumulator.js';
+import type { Claim } from '../../app/core/domain/claim.js';
+import type { Dispute } from '../../app/core/domain/dispute.js';
+import type { Member } from '../../app/core/domain/member.js';
+import type { Policy } from '../../app/core/domain/policy.js';
 import type {
   AccumulatorRepository,
   ClaimRepository,
@@ -19,7 +19,7 @@ import type {
   IdGenerator,
   MemberRepository,
   PolicyRepository
-} from '../../src/core/ports/repositories.js';
+} from '../../app/core/ports/repositories.js';
 
 class FakeIdGenerator implements IdGenerator {
   private counter = 1;
@@ -46,6 +46,10 @@ class InMemoryMemberRepository implements MemberRepository {
 
   async getById(memberId: string): Promise<Member | null> {
     return this.members.find((member) => member.memberId === memberId) ?? null;
+  }
+
+  async listAll(): Promise<Member[]> {
+    return [...this.members];
   }
 }
 

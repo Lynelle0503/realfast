@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { adjudicateClaim } from '../../src/core/application/services/adjudication-service.js';
-import type { Claim } from '../../src/core/domain/claim.js';
-import type { Policy } from '../../src/core/domain/policy.js';
+import { adjudicateClaim } from '../../app/core/application/services/adjudication-service.js';
+import type { Claim } from '../../app/core/domain/claim.js';
+import type { Policy } from '../../app/core/domain/policy.js';
 
 const basePolicy: Policy = {
   policyId: 'POL-1',

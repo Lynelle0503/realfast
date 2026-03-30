@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import type { AccumulatorEntry } from '../../src/core/domain/accumulator.js';
-import type { Claim } from '../../src/core/domain/claim.js';
-import type { Dispute } from '../../src/core/domain/dispute.js';
-import type { Member } from '../../src/core/domain/member.js';
-import type { Policy } from '../../src/core/domain/policy.js';
-import { SqliteAccumulatorRepository } from '../../src/infra/db/repositories/sqlite-accumulator-repository.js';
-import { SqliteClaimRepository } from '../../src/infra/db/repositories/sqlite-claim-repository.js';
-import { SqliteDisputeRepository } from '../../src/infra/db/repositories/sqlite-dispute-repository.js';
-import { SqliteMemberRepository } from '../../src/infra/db/repositories/sqlite-member-repository.js';
-import { SqlitePolicyRepository } from '../../src/infra/db/repositories/sqlite-policy-repository.js';
+import type { AccumulatorEntry } from '../../app/core/domain/accumulator.js';
+import type { Claim } from '../../app/core/domain/claim.js';
+import type { Dispute } from '../../app/core/domain/dispute.js';
+import type { Member } from '../../app/core/domain/member.js';
+import type { Policy } from '../../app/core/domain/policy.js';
+import { SqliteAccumulatorRepository } from '../../app/infra/db/repositories/sqlite-accumulator-repository.js';
+import { SqliteClaimRepository } from '../../app/infra/db/repositories/sqlite-claim-repository.js';
+import { SqliteDisputeRepository } from '../../app/infra/db/repositories/sqlite-dispute-repository.js';
+import { SqliteMemberRepository } from '../../app/infra/db/repositories/sqlite-member-repository.js';
+import { SqlitePolicyRepository } from '../../app/infra/db/repositories/sqlite-policy-repository.js';
 import { withSqliteDatabase } from './sqlite-test-helpers.js';
 
 const createDb = withSqliteDatabase();

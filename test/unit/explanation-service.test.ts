@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getMemberNextStep, getReasonText } from '../../src/core/application/services/explanation-service.js';
+import { getMemberNextStep, getReasonText } from '../../app/core/application/services/explanation-service.js';
 
 describe('explanation service', () => {
   it('maps denial reasons to member-facing text', () => {

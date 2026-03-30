@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 
 import { afterEach } from 'vitest';
 
-import { closeDatabase, initializeDatabase } from '../../src/infra/db/sqlite.js';
+import { closeDatabase, initializeDatabase } from '../../app/infra/db/sqlite.js';
 
 export function withSqliteDatabase() {
   const tempDirs: string[] = [];

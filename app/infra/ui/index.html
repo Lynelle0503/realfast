@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Claims Demo UI</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-title">
+        <button id="sidebar-toggle" type="button" class="icon-button" aria-label="Toggle members sidebar">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        <span class="topbar-mark"></span>
+        <strong>Claims Demo UI</strong>
+      </div>
+    </header>
+
+    <div class="topbar-divider"></div>
+
+    <div class="app-shell sidebar-expanded" id="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-head">
+          <div>
+            <p class="eyebrow">Step 1</p>
+            <h1>Members</h1>
+          </div>
+          <button id="sidebar-close" type="button" class="icon-button close-button" aria-label="Close members sidebar">
+            <span></span>
+            <span></span>
+          </button>
+        </div>
+        <div class="simple-card member-create-card">
+          <div class="section-row">
+            <div>
+              <strong>Create demo member + policy</strong>
+              <!-- <div class="muted">Pick a preset or enter details before we create a fresh policy.</div> -->
+            </div>
+            <button id="create-demo-member-toggle" type="button" class="secondary inline-button compact-button">Open</button>
+          </div>
+          <form id="create-demo-member-form" class="stack hidden">
+            <div class="action-mode-switch compact-switch" id="demo-member-mode-switch">
+              <button type="button" class="mode-button active" data-demo-member-mode="preset">Preset user</button>
+              <button type="button" class="mode-button" data-demo-member-mode="custom">Enter details</button>
+            </div>
+
+            <div id="demo-member-preset-panel">
+              <label>Dummy users
+                <select id="demo-member-template"></select>
+              </label>
+            </div>
+
+            <div id="demo-member-custom-panel" class="hidden">
+              <label>Full name
+                <input id="demo-member-full-name" type="text" placeholder="Anaya Singh" />
+              </label>
+              <label>Date of birth
+                <input id="demo-member-date-of-birth" type="date" />
+              </label>
+            </div>
+
+            <button id="create-demo-member" type="submit" class="secondary">Create demo member + policy</button>
+          </form>
+        </div>
+        <div id="member-list" class="stack"></div>
+      </aside>
+
+      <main class="content">
+        <section class="panel">
+          <p class="eyebrow">Step 2</p>
+          <h2>Claim flow on policy</h2>
+          <p class="muted">Start with the current claim journey for the selected member and policy.</p>
+          <div id="claim-list" class="stack"></div>
+        </section>
+
+        <section class="panel">
+          <p class="eyebrow">Step 3</p>
+          <h2 id="member-title">No member selected</h2>
+          <p id="member-subtitle" class="muted">Select a member to see policy coverage and claims on that policy.</p>
+          <div id="member-detail"></div>
+          <h3>Policy coverage</h3>
+          <div id="policy-list" class="stack"></div>
+        </section>
+
+        <section class="panel">
+          <p class="eyebrow">Step 4</p>
+          <h2 id="claim-title">No claim selected</h2>
+          <p class="muted">See the current claim state, why it is there, and each line item decision.</p>
+          <div id="claim-detail"></div>
+          <label class="toggle-row">
+            <input id="raw-json-toggle" type="checkbox" />
+            <span>Show raw JSON</span>
+          </label>
+          <pre id="raw-json" class="raw-json hidden"></pre>
+        </section>
+
+        <section class="panel">
+          <p class="eyebrow">Step 5</p>
+          <h2>Next action</h2>
+          <div class="action-mode-switch" id="action-mode-switch">
+            <button type="button" class="mode-button active" data-action-mode="create">Create claim</button>
+            <button type="button" class="mode-button" data-action-mode="update">Update selected claim</button>
+          </div>
+
+          <div id="create-actions-panel" class="action-panel">
+            <div class="action-group-header">
+              <p class="eyebrow">Create</p>
+              <h3>Submit a new claim</h3>
+              <p class="muted">This flow creates a fresh claim before any adjudication or payment actions happen.</p>
+            </div>
+            <form id="submit-claim-form" class="simple-card action-card">
+              <label>Policy
+                <select id="submit-policy-id"></select>
+              </label>
+              <p id="submit-claim-note" class="muted"></p>
+              <label>Provider ID
+                <input id="provider-id" type="text" value="PRV-9001" required />
+              </label>
+              <label>Provider name
+                <input id="provider-name" type="text" value="Downtown Clinic" required />
+              </label>
+              <label>Diagnosis codes
+                <input id="diagnosis-codes" type="text" value="J02.9" />
+              </label>
+              <div class="section-row">
+                <strong>Line items</strong>
+                <button id="add-line-item" type="button" class="secondary inline-button">Add line item</button>
+              </div>
+              <div id="line-items-editor" class="stack"></div>
+              <button type="submit">Submit claim</button>
+            </form>
+          </div>
+
+          <div id="update-actions-panel" class="action-panel hidden">
+            <div class="action-group-header">
+              <p class="eyebrow">Update</p>
+              <h3>Selected claim actions</h3>
+              <p class="muted">These actions operate on the currently selected claim and follow the claim state machine.</p>
+            </div>
+            <div class="stack">
+              <div class="simple-card action-card">
+                <div class="action-card-head">
+                  <h3>Adjudicate</h3>
+                  <span class="action-chip">POST adjudication</span>
+                </div>
+                <button id="adjudicate-claim" type="button">Adjudicate selected claim</button>
+              </div>
+
+              <form id="manual-review-form" class="simple-card action-card">
+                <div class="action-card-head">
+                  <h3>Resolve manual review</h3>
+                  <span class="action-chip">POST review decision</span>
+                </div>
+                <label>Manual review line
+                  <select id="manual-review-line"></select>
+                </label>
+                <label>Decision
+                  <select id="manual-review-decision">
+                    <option value="approved">approved</option>
+                    <option value="denied">denied</option>
+                  </select>
+                </label>
+                <button type="submit">Resolve manual review</button>
+              </form>
+
+              <form id="payment-form" class="simple-card action-card">
+                <div class="action-card-head">
+                  <h3>Mark approved lines paid</h3>
+                  <span class="action-chip">POST payment</span>
+                </div>
+                <div id="payable-lines" class="stack"></div>
+                <button type="submit">Record payment</button>
+              </form>
+
+              <form id="dispute-form" class="simple-card action-card">
+                <div class="action-card-head">
+                  <h3>Open dispute</h3>
+                  <span class="action-chip">POST dispute</span>
+                </div>
+                <label>Reason
+                  <input id="dispute-reason" type="text" value="I disagree with the denial." required />
+                </label>
+                <label>Note
+                  <textarea id="dispute-note" rows="2">Please review the service decision.</textarea>
+                </label>
+                <div id="dispute-line-items" class="stack"></div>
+                <button type="submit">Open dispute</button>
+              </form>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { seedDatabase } from '../../src/infra/db/seed.js';
-import { closeDatabase, openDatabase } from '../../src/infra/db/sqlite.js';
+import { seedDatabase } from '../../app/infra/db/seed.js';
+import { closeDatabase, openDatabase } from '../../app/infra/db/sqlite.js';
 
 describe('sqlite seed', () => {
   const tempDirs: string[] = [];
@@ -27,8 +27,8 @@ describe('sqlite seed', () => {
     const summary = await seedDatabase({ filePath });
     expect(summary).toEqual({
       filePath,
-      members: 3,
-      policies: 3,
+      members: 4,
+      policies: 5,
       claims: 3,
       disputes: 1,
       accumulatorEntries: 18
@@ -55,6 +55,34 @@ describe('sqlite seed', () => {
       .all() as Array<{ member_id: string; policy_id: string; claim_count: number }>;
 
     expect(duplicateMemberPolicies).toEqual([]);
+
+    const membersWithoutPolicies = db
+      .prepare(
+        `SELECT members.id
+         FROM members
+         LEFT JOIN policies ON policies.member_id = members.id
+         GROUP BY members.id
+         HAVING COUNT(policies.id) = 0`
+      )
+      .all() as Array<{ id: string }>;
+
+    expect(membersWithoutPolicies).toEqual([]);
+
+    const memberPolicyCounts = db
+      .prepare(
+        `SELECT member_id, COUNT(*) AS policy_count
+         FROM policies
+         GROUP BY member_id
+         ORDER BY member_id`
+      )
+      .all() as Array<{ member_id: string; policy_count: number }>;
+
+    expect(memberPolicyCounts).toEqual([
+      { member_id: 'MEM-0001', policy_count: 2 },
+      { member_id: 'MEM-0002', policy_count: 1 },
+      { member_id: 'MEM-0003', policy_count: 1 },
+      { member_id: 'MEM-0004', policy_count: 1 }
+    ]);
 
     closeDatabase(db);
   });

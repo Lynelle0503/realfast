@@ -9,7 +9,7 @@ import {
   LINE_DECISION_TYPES,
   LINE_ITEM_STATUSES,
   REASON_CODES
-} from '../../src/core/domain/enums.js';
+} from '../../app/core/domain/enums.js';
 
 describe('domain enums', () => {
   it('exposes the documented claim statuses', () => {

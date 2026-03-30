@@ -2,15 +2,15 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { Server } from 'node:http';
 
-import { SqliteAccumulatorRepository } from '../../src/infra/db/repositories/sqlite-accumulator-repository.js';
-import { SqliteClaimRepository } from '../../src/infra/db/repositories/sqlite-claim-repository.js';
-import { SqliteDisputeRepository } from '../../src/infra/db/repositories/sqlite-dispute-repository.js';
-import { SqliteMemberRepository } from '../../src/infra/db/repositories/sqlite-member-repository.js';
-import { SqlitePolicyRepository } from '../../src/infra/db/repositories/sqlite-policy-repository.js';
-import { initializeDatabase } from '../../src/infra/db/sqlite.js';
-import { SystemClock } from '../../src/infra/db/support/clock.js';
-import { DeterministicIdGenerator } from '../../src/infra/db/support/ids.js';
-import { createApiServer } from '../../src/infra/http/api.js';
+import { SqliteAccumulatorRepository } from '../../app/infra/db/repositories/sqlite-accumulator-repository.js';
+import { SqliteClaimRepository } from '../../app/infra/db/repositories/sqlite-claim-repository.js';
+import { SqliteDisputeRepository } from '../../app/infra/db/repositories/sqlite-dispute-repository.js';
+import { SqliteMemberRepository } from '../../app/infra/db/repositories/sqlite-member-repository.js';
+import { SqlitePolicyRepository } from '../../app/infra/db/repositories/sqlite-policy-repository.js';
+import { initializeDatabase } from '../../app/infra/db/sqlite.js';
+import { SystemClock } from '../../app/infra/db/support/clock.js';
+import { DeterministicIdGenerator } from '../../app/infra/db/support/ids.js';
+import { createApiServer } from '../../app/infra/http/api.js';
 import { withSqliteDatabase } from './sqlite-test-helpers.js';
 
 const createDb = withSqliteDatabase();
@@ -98,6 +98,10 @@ describe('http api', () => {
       fullName: 'Aarav Mehta',
       dateOfBirth: '1988-07-14'
     });
+
+    const membersResponse = await fetch(`${baseUrl}/members`);
+    expect(membersResponse.status).toBe(200);
+    await expect(membersResponse.json()).resolves.toEqual({ items: [member] });
 
     const fetchedMemberResponse = await fetch(`${baseUrl}/members/${member.memberId}`);
     expect(fetchedMemberResponse.status).toBe(200);
