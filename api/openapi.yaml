@@ -507,7 +507,7 @@ components:
 
     ClaimLineItem:
       type: object
-      required: [lineItemId, serviceCode, description, billedAmount, status]
+      required: [lineItemId, serviceCode, description, billedAmount, dateOfService, status]
       properties:
         lineItemId:
           type: string
@@ -517,6 +517,11 @@ components:
           type: string
         billedAmount:
           type: number
+        dateOfService:
+          oneOf:
+            - type: string
+              format: date
+            - type: 'null'
         status:
           $ref: '#/components/schemas/LineItemStatus'
 
@@ -530,6 +535,9 @@ components:
           type: string
         billedAmount:
           type: number
+        dateOfService:
+          type: string
+          format: date
 
     LineDecision:
       type: object
@@ -592,7 +600,7 @@ components:
           format: date
         metricType:
           type: string
-          enum: [dollars_paid, visits_used, member_oop_applied]
+          enum: [dollars_paid, visits_used, member_oop_applied, deductible_applied]
         delta:
           type: number
         source:

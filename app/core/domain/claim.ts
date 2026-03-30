@@ -10,6 +10,7 @@ export interface ClaimLineItem {
   serviceCode: string;
   description: string;
   billedAmount: number;
+  dateOfService: string | null;
   status: LineItemStatus;
 }
 
@@ -40,6 +41,7 @@ export interface CreateClaimLineItemInput {
   serviceCode: string;
   description: string;
   billedAmount: number;
+  dateOfService?: string;
 }
 
 export interface CreateClaimInput {

@@ -36,6 +36,7 @@ export async function createClaim(
     serviceCode: lineItem.serviceCode,
     description: lineItem.description,
     billedAmount: lineItem.billedAmount,
+    dateOfService: lineItem.dateOfService ?? input.dateOfService,
     status: 'submitted'
   }));
 

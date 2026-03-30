@@ -23,6 +23,7 @@ interface ClaimLineItemRow {
   service_code: string;
   description: string;
   billed_amount: number;
+  date_of_service: string | null;
   status: 'submitted' | 'approved' | 'denied' | 'manual_review' | 'paid';
 }
 
@@ -78,6 +79,7 @@ export class SqliteClaimRepository implements ClaimRepository {
          SET service_code = @service_code,
              description = @description,
              billed_amount = @billed_amount,
+             date_of_service = @date_of_service,
              status = @status
          WHERE id = @id AND claim_id = @claim_id`
       );
@@ -89,6 +91,7 @@ export class SqliteClaimRepository implements ClaimRepository {
           service_code: lineItem.serviceCode,
           description: lineItem.description,
           billed_amount: lineItem.billedAmount,
+          date_of_service: lineItem.dateOfService,
           status: lineItem.status
         });
       });
@@ -201,6 +204,7 @@ export class SqliteClaimRepository implements ClaimRepository {
          service_code,
          description,
          billed_amount,
+         date_of_service,
          status
        ) VALUES (
          @id,
@@ -208,6 +212,7 @@ export class SqliteClaimRepository implements ClaimRepository {
          @service_code,
          @description,
          @billed_amount,
+         @date_of_service,
          @status
        )`
     );
@@ -219,6 +224,7 @@ export class SqliteClaimRepository implements ClaimRepository {
         service_code: lineItem.serviceCode,
         description: lineItem.description,
         billed_amount: lineItem.billedAmount,
+        date_of_service: lineItem.dateOfService,
         status: lineItem.status
       });
     });
@@ -268,7 +274,7 @@ export class SqliteClaimRepository implements ClaimRepository {
   private getClaimLineItemRows(claimId: string): ClaimLineItemRow[] {
     return this.db
       .prepare(
-        `SELECT id, claim_id, service_code, description, billed_amount, status
+        `SELECT id, claim_id, service_code, description, billed_amount, date_of_service, status
          FROM claim_line_items
          WHERE claim_id = ?
          ORDER BY id`
