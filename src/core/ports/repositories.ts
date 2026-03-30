@@ -17,6 +17,7 @@ export interface PolicyRepository {
 
 export interface ClaimRepository {
   create(claim: Claim): Promise<void>;
+  update(claim: Claim): Promise<void>;
   getById(claimId: string): Promise<Claim | null>;
   listByMemberId(memberId: string): Promise<Claim[]>;
 }
@@ -29,5 +30,14 @@ export interface DisputeRepository {
 
 export interface AccumulatorRepository {
   append(entry: AccumulatorEntry): Promise<void>;
+  appendMany(entries: AccumulatorEntry[]): Promise<void>;
   listByPolicyAndService(policyId: string, serviceCode: string): Promise<AccumulatorEntry[]>;
+}
+
+export interface IdGenerator {
+  next(prefix: string): string;
+}
+
+export interface Clock {
+  now(): Date;
 }

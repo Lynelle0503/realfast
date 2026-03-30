@@ -16,8 +16,8 @@ export interface ClaimLineItem {
 export interface LineDecision {
   lineItemId: string;
   decision: LineDecisionType;
-  reasonCode: ReasonCode;
-  reasonText: string;
+  reasonCode: ReasonCode | null;
+  reasonText: string | null;
   memberNextStep: string | null;
   payerAmount: number | null;
   memberResponsibility: number | null;
