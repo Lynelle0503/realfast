@@ -21,8 +21,8 @@ describe('claim rollup service', () => {
     const claim = applyClaimRollup({
       ...baseClaim,
       lineItems: [
-        { lineItemId: 'LI-1', serviceCode: 'office_visit', description: 'A', billedAmount: 100, status: 'approved' },
-        { lineItemId: 'LI-2', serviceCode: 'lab_test', description: 'B', billedAmount: 100, status: 'manual_review' }
+        { lineItemId: 'LI-1', serviceCode: 'office_visit', description: 'A', billedAmount: 100, dateOfService: '2026-02-01', status: 'approved' },
+        { lineItemId: 'LI-2', serviceCode: 'lab_test', description: 'B', billedAmount: 100, dateOfService: '2026-02-01', status: 'manual_review' }
       ]
     });
 
@@ -34,8 +34,8 @@ describe('claim rollup service', () => {
     const claim = applyClaimRollup({
       ...baseClaim,
       lineItems: [
-        { lineItemId: 'LI-1', serviceCode: 'office_visit', description: 'A', billedAmount: 100, status: 'approved' },
-        { lineItemId: 'LI-2', serviceCode: 'lab_test', description: 'B', billedAmount: 50, status: 'denied' }
+        { lineItemId: 'LI-1', serviceCode: 'office_visit', description: 'A', billedAmount: 100, dateOfService: '2026-02-01', status: 'approved' },
+        { lineItemId: 'LI-2', serviceCode: 'lab_test', description: 'B', billedAmount: 50, dateOfService: '2026-02-01', status: 'denied' }
       ]
     });
 
@@ -47,8 +47,8 @@ describe('claim rollup service', () => {
     const claim = applyClaimRollup({
       ...baseClaim,
       lineItems: [
-        { lineItemId: 'LI-1', serviceCode: 'office_visit', description: 'A', billedAmount: 100, status: 'paid' },
-        { lineItemId: 'LI-2', serviceCode: 'lab_test', description: 'B', billedAmount: 50, status: 'denied' }
+        { lineItemId: 'LI-1', serviceCode: 'office_visit', description: 'A', billedAmount: 100, dateOfService: '2026-02-01', status: 'paid' },
+        { lineItemId: 'LI-2', serviceCode: 'lab_test', description: 'B', billedAmount: 50, dateOfService: '2026-02-01', status: 'denied' }
       ]
     });
 

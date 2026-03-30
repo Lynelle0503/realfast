@@ -37,7 +37,12 @@ describe('domain enums', () => {
 
   it('exposes the documented coverage and accumulator enums', () => {
     expect(BENEFIT_PERIODS).toEqual(['policy_year']);
-    expect(ACCUMULATOR_METRIC_TYPES).toEqual(['dollars_paid', 'visits_used', 'member_oop_applied']);
+    expect(ACCUMULATOR_METRIC_TYPES).toEqual([
+      'dollars_paid',
+      'visits_used',
+      'member_oop_applied',
+      'deductible_applied'
+    ]);
     expect(ACCUMULATOR_ENTRY_STATUSES).toEqual(['posted', 'reversed']);
     expect(DISPUTE_STATUSES).toEqual(['open', 'upheld', 'overturned']);
   });

@@ -108,6 +108,7 @@ describe('sqlite repositories', () => {
           serviceCode: 'office_visit',
           description: 'Primary care consultation',
           billedAmount: 150,
+          dateOfService: '2026-02-01',
           status: 'submitted'
         }
       ],
@@ -184,6 +185,7 @@ describe('sqlite repositories', () => {
           serviceCode: 'office_visit',
           description: 'Primary care consultation',
           billedAmount: 150,
+          dateOfService: '2026-02-01',
           status: 'approved'
         }
       ],

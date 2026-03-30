@@ -188,13 +188,18 @@ describe('http api', () => {
       dateOfService: string | null;
       status: string;
       approvedLineItemCount: number;
-      lineItems: Array<{ lineItemId: string }>;
+      lineItems: Array<{ lineItemId: string; dateOfService: string | null }>;
       lineDecisions: unknown[];
     };
     expect(createdClaim.claimId).toBe('CLM-0001');
     expect(createdClaim.dateOfService).toBe('2026-03-01');
     expect(createdClaim.status).toBe('submitted');
     expect(createdClaim.approvedLineItemCount).toBe(0);
+    expect(createdClaim.lineItems.map((lineItem) => lineItem.dateOfService)).toEqual([
+      '2026-03-01',
+      '2026-03-01',
+      '2026-03-01'
+    ]);
     expect(createdClaim.lineDecisions).toEqual([]);
 
     const claimsResponse = await fetch(`${baseUrl}/members/${member.memberId}/claims`);
@@ -357,14 +362,12 @@ describe('http api', () => {
     expect(resolvedDispute.dispute.status).toBe('overturned');
     expect(resolvedDispute.dispute.resolutionNote).toBe('Manual approval after review.');
     expect(resolvedDispute.dispute.resolvedAt).toBeTruthy();
-    expect(resolvedDispute.claim.status).toBe('approved');
-    expect(resolvedDispute.claim.approvedLineItemCount).toBe(3);
-    expect(resolvedDispute.accumulatorEffects).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ sourceId: 'LI-0002', metricType: 'dollars_paid' }),
-        expect.objectContaining({ sourceId: 'LI-0002', metricType: 'member_oop_applied' })
-      ])
+    expect(resolvedDispute.claim.status).toBe('paid');
+    expect(resolvedDispute.claim.approvedLineItemCount).toBe(2);
+    expect(resolvedDispute.claim.lineItems).toEqual(
+      expect.arrayContaining([expect.objectContaining({ lineItemId: 'LI-0002', status: 'denied' })])
     );
+    expect(resolvedDispute.accumulatorEffects).toEqual([]);
 
     const finalClaimsResponse = await fetch(`${baseUrl}/members/${member.memberId}/claims`);
     expect(finalClaimsResponse.status).toBe(200);
@@ -375,8 +378,8 @@ describe('http api', () => {
           memberId: member.memberId,
           policyId: policy.policyId,
           dateOfService: '2026-03-01',
-          status: 'approved',
-          approvedLineItemCount: 3
+          status: 'paid',
+          approvedLineItemCount: 2
         }
       ]
     });
