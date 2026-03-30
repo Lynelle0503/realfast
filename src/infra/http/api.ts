@@ -33,14 +33,8 @@ import type {
   MemberRepository,
   PolicyRepository
 } from '../../core/ports/repositories.js';
-import { SqliteAccumulatorRepository } from '../db/repositories/sqlite-accumulator-repository.js';
-import { SqliteClaimRepository } from '../db/repositories/sqlite-claim-repository.js';
-import { SqliteDisputeRepository } from '../db/repositories/sqlite-dispute-repository.js';
-import { SqliteMemberRepository } from '../db/repositories/sqlite-member-repository.js';
-import { SqlitePolicyRepository } from '../db/repositories/sqlite-policy-repository.js';
-import { initializeDatabase, type SqliteDatabaseOptions } from '../db/sqlite.js';
-import { SystemClock } from '../db/support/clock.js';
-import { DeterministicIdGenerator } from '../db/support/ids.js';
+import { createSqliteAppContext } from '../app/context.js';
+import type { SqliteDatabaseOptions } from '../db/sqlite.js';
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = { [key: string]: JsonValue };
@@ -596,16 +590,5 @@ export function createApiServer(dependencies: ApiDependencies): Server {
 }
 
 export function createDefaultApiContext(options: SqliteDatabaseOptions = {}): DefaultApiContext {
-  const db = initializeDatabase(options);
-
-  return {
-    memberRepository: new SqliteMemberRepository(db),
-    policyRepository: new SqlitePolicyRepository(db),
-    claimRepository: new SqliteClaimRepository(db),
-    disputeRepository: new SqliteDisputeRepository(db),
-    accumulatorRepository: new SqliteAccumulatorRepository(db),
-    idGenerator: new DeterministicIdGenerator(),
-    clock: new SystemClock(),
-    close: () => db.close()
-  };
+  return createSqliteAppContext(options);
 }
