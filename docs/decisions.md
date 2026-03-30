@@ -1,288 +1,213 @@
-# Decisions
+# Decisions And Trade-Offs
 
-This document records what has been defined so far for the Claims Processing System, what assumptions currently shape the design, and what has not yet been built out in detail.
+This document explains what was built, what was intentionally left out of v1, and which assumptions shape the current implementation.
 
-## What We Have Defined
+## What I Built
 
-- A member can have multiple policies.
-- Each policy has its own coverage rules, including covered services, limits, and deductibles.
-- A claim belongs to exactly one policy.
-- For now, a member can have only one claim on a particular policy.
-- Coverage is matched by `serviceCode` for v1.
-- Policy coverage rules use explicit `serviceRules` instead of a simple `coveredServices` list.
-- Service rules may define both dollar caps and visit caps.
-- Benefit usage resets by policy year using the policy effective-date anniversary.
-- Claims are resolved at the line-item level first, then rolled up to a claim-level status.
-- Once all line items are resolved, the claim may be marked `approved` and should expose `approvedLineItemCount`.
-- The v1 API layer is defined as a REST JSON contract with explicit action endpoints for adjudication, manual-review resolution, payment, and disputes.
+### Core Domain
 
-## Assumptions
+- Members with multiple policies.
+- Member-owned policies with explicit `coverageRules`.
+- Claims with multiple line items.
+- Line-level decisions with normalized reason codes and member-facing text.
+- Coverage accumulators stored as ledger entries.
+- Claim-level disputes with optional references to denied line items.
 
-- Each claim line item adjudicates against the policy `serviceRule` with the same `serviceCode`.
-- Deductible and coinsurance are policy-level defaults for v1 and are not overridden per service.
-- `coinsurancePercent: 80` means the insurer pays 80% of the allowed amount after deductible.
-- Service rules may include both `yearlyDollarCap` and `yearlyVisitCap`.
-- `null` means no cap of that type applies for the service.
-- Yearly cap usage accumulates against the insurer paid amount, not the billed amount.
-- `benefitPeriod: "policy_year"` means caps reset on the policy effective-date anniversary, not on January 1 unless the policy starts on January 1.
-- Usage counts only when a line item is approved.
-- One approved covered line item consumes one visit for visit-based caps.
-- Usage should be tracked through a ledger-style accumulator so reversals and disputes can post offsetting adjustments.
-- If a limit is nearly exhausted and adjudication would result in a partial payment, the line item should be routed to manual review instead of being auto-approved with a reduced payment.
-- If any line item remains unresolved, the claim stays in `under_review`.
-- If any line item has decision `manual_review`, the claim status must be `under_review`.
-- Once all line items are resolved, the claim can be marked `approved` even if some line items were denied.
-- `approvedLineItemCount` records how many line items were approved on the finalized claim.
-- Denied line items should use a normalized reason catalog with plain-language member-facing text.
-- If a denial is caused by a cap, the member-facing explanation should say that the policy limit was exceeded.
-- Manual review should be communicated as pending review, not as a denial.
+### Core Workflow
 
-## State Machine Decisions
+- Claim submission in `submitted`.
+- Explicit adjudication step.
+- Manual-review routing for partial-payment edge cases.
+- Explicit manual-review resolution.
+- Line-item payment recording.
+- Claim status rollup based on line-item states.
 
-- Line items own adjudication and payment progression.
-- Claims own aggregate workflow status.
-- Claim payment status is derived from line-item payment states.
+### Delivery Surfaces
 
-### Claim State Machine
+- CLI for creating data and walking the workflow.
+- REST API under `/api/v1`.
+- Local web UI served from the same Node process.
+- OpenAPI contract in [api/openapi.yaml](/Users/lynelle/Documents/CodeSpace/RealFast/api/openapi.yaml).
 
-Claim states:
+### Testing
 
-- `submitted`
-- `under_review`
-- `approved`
-- `paid`
+- Unit tests for adjudication, explanations, benefit periods, rollup logic, and application commands.
+- Integration tests for SQLite persistence, seeding, CLI flows, API flows, and the local UI server.
 
-Claim transitions:
+## Modeling Decisions
 
-- `submitted -> under_review`
-- `under_review -> approved`
-- `approved -> paid`
+### 1. Coverage Rules Live On The Policy
 
-Claim rollup rules:
+I chose to keep coverage rules inline on the policy as structured JSON-friendly objects rather than invent a rule DSL. That keeps the system easy to explain and easy to mutate for a take-home assignment.
 
-- If any line item is unresolved, the claim status is `under_review`.
-- If any line item is `manual_review`, the claim status is `under_review`.
-- If all line items are resolved, the claim status is `approved`.
-- If all approved line items are paid, the claim status is `paid`.
-- Claim `approved` means adjudication is complete, not that every line item was approved.
+Why:
 
-### Line Item State Machine
+- Fast to build.
+- Easy to serialize through API, CLI, SQLite, and tests.
+- Enough structure to model the required caps and coverage flags.
 
-Line item states:
+Trade-off:
 
-- `submitted`
-- `approved`
-- `denied`
-- `manual_review`
-- `paid`
+- It is less flexible than a dedicated rule engine or versioned benefit configuration model.
 
-Line item transitions:
+### 2. Adjudication Is Service-Code Driven
 
-- `submitted -> approved`
-- `submitted -> denied`
-- `submitted -> manual_review`
-- `manual_review -> approved`
-- `manual_review -> denied`
-- `approved -> paid`
+The current implementation matches each claim line to a policy rule by exact `serviceCode`.
 
-Line item rules:
+Why:
 
-- `manual_review` is a pending state, not a denial.
-- `denied` does not transition to `paid`.
-- Payment is tracked at the line-item level for v1 and rolled up to the claim.
+- It satisfies the prompt cleanly for v1.
+- It keeps reasoning deterministic and visible in tests.
 
-## Reference Example
+Trade-off:
 
-### Member
+- Real claims adjudication usually depends on service date, diagnosis, eligibility, provider context, network status, and allowed amounts.
 
-```json
-{
-  "memberId": "MEM-1001",
-  "fullName": "Aarav Mehta",
-  "dateOfBirth": "1988-07-14"
-}
-```
+### 3. Accumulators Are Ledger Rows, Not Mutable Totals
 
-### Policy
+I modeled coverage usage as append-only style entries with `metricType`, `delta`, and `sourceId`.
 
-```json
-{
-  "policyId": "POL-2001",
-  "memberId": "MEM-1001",
-  "policyType": "Health PPO",
-  "effectiveDate": "2026-01-01",
-  "coverageRules": {
-    "benefitPeriod": "policy_year",
-    "deductible": 500,
-    "coinsurancePercent": 80,
-    "annualOutOfPocketMax": 3000,
-    "serviceRules": [
-      {
-        "serviceCode": "office_visit",
-        "covered": true,
-        "yearlyDollarCap": 1000,
-        "yearlyVisitCap": 10
-      },
-      {
-        "serviceCode": "lab_test",
-        "covered": true,
-        "yearlyDollarCap": 500,
-        "yearlyVisitCap": null
-      },
-      {
-        "serviceCode": "prescription",
-        "covered": false,
-        "yearlyDollarCap": null,
-        "yearlyVisitCap": null
-      }
-    ]
-  }
-}
-```
+Why:
 
-### Claim
+- Better auditability.
+- Easier future support for reversals and adjustments.
+- Natural fit for claim-line-driven benefit usage.
 
-```json
-{
-  "claimId": "CLM-3001",
-  "memberId": "MEM-1001",
-  "policyId": "POL-2001",
-  "provider": {
-    "providerId": "PRV-501",
-    "name": "CityCare Clinic"
-  },
-  "diagnosisCodes": [
-    "J02.9"
-  ],
-  "status": "submitted",
-  "approvedLineItemCount": 0,
-  "lineItems": [
-    {
-      "lineItemId": "LI-1",
-      "serviceCode": "office_visit",
-      "description": "Primary care consultation",
-      "billedAmount": 150
-    },
-    {
-      "lineItemId": "LI-2",
-      "serviceCode": "lab_test",
-      "description": "Rapid strep test",
-      "billedAmount": 80
-    }
-  ]
-}
-```
+Trade-off:
 
-Each claim line item is adjudicated by matching its `serviceCode` to the corresponding policy `serviceRule`.
+- The read path must aggregate rows to derive usage.
 
-### Denial And Review Reason Catalog
+### 4. Claim Status Is Derived
 
-```json
-[
-  {
-    "reasonCode": "SERVICE_NOT_COVERED",
-    "decision": "denied",
-    "memberText": "This service is not covered under your policy."
-  },
-  {
-    "reasonCode": "YEARLY_CAP_EXCEEDED",
-    "decision": "denied",
-    "memberText": "This service was denied because you have already used the yearly coverage limit allowed by your policy."
-  },
-  {
-    "reasonCode": "VISIT_CAP_EXCEEDED",
-    "decision": "denied",
-    "memberText": "This service was denied because you have already used the number of visits allowed by your policy for this benefit period."
-  },
-  {
-    "reasonCode": "MISSING_INFORMATION",
-    "decision": "denied",
-    "memberText": "We could not process this service because required claim information is missing."
-  },
-  {
-    "reasonCode": "POLICY_NOT_ACTIVE",
-    "decision": "denied",
-    "memberText": "This service was denied because the policy was not active on the date of service."
-  },
-  {
-    "reasonCode": "MANUAL_REVIEW_REQUIRED",
-    "decision": "manual_review",
-    "memberText": "This service is still under review because it needs additional review before a final decision can be made."
-  }
-]
-```
+Claim status is not independently edited by users. It is rolled up from line-item state.
 
-For denied lines, the system should store both a `reasonCode` and a member-facing `reasonText`, plus a default dispute-oriented next step when applicable.
+Why:
 
-### Mixed Outcome Example
+- Keeps workflow logic consistent.
+- Avoids invalid combinations like a fully unresolved claim marked as `approved`.
 
-```json
-{
-  "claimId": "CLM-4001",
-  "status": "under_review",
-  "approvedLineItemCount": 3,
-  "lineDecisions": [
-    { "lineItemId": "LI-1", "decision": "approved" },
-    { "lineItemId": "LI-2", "decision": "approved" },
-    { "lineItemId": "LI-3", "decision": "approved" },
-    {
-      "lineItemId": "LI-4",
-      "decision": "denied",
-      "reasonCode": "SERVICE_NOT_COVERED",
-      "reasonText": "This service is not covered under your policy.",
-      "memberNextStep": "You can dispute this decision if you believe it should be covered."
-    },
-    {
-      "lineItemId": "LI-5",
-      "decision": "manual_review",
-      "reasonCode": "MANUAL_REVIEW_REQUIRED",
-      "reasonText": "This service is still under review because it needs additional review before a final decision can be made."
-    }
-  ]
-}
-```
+Trade-off:
 
-If any line item is in `manual_review`, the claim must remain `status: "under_review"`. If every line item is resolved, the same claim can move to `status: "approved"` while still showing `approvedLineItemCount: 3`.
+- You need to reason about both claim state and line-item state together.
 
-### State Machine Example
+### 5. Manual Review Is Explicit
 
-```json
-{
-  "claimId": "CLM-5001",
-  "status": "under_review",
-  "approvedLineItemCount": 2,
-  "lineItems": [
-    { "lineItemId": "LI-1", "status": "approved" },
-    { "lineItemId": "LI-2", "status": "denied" },
-    { "lineItemId": "LI-3", "status": "manual_review" }
-  ]
-}
-```
+When a line would otherwise need a partial automatic payment due to a nearly exhausted dollar cap, the system moves that line to `manual_review`.
 
-This claim remains `under_review` because `LI-3` is still in `manual_review`. Once `LI-3` resolves to either `approved` or `denied`, the claim can move to `approved`. Once all approved line items are paid, the claim can move to `paid`.
+Why:
 
-### Coverage Accumulator Example
+- It matches the assignment’s assumption.
+- It keeps the auto-adjudication path conservative.
 
-```json
-{
-  "memberId": "MEM-1001",
-  "policyId": "POL-2001",
-  "serviceCode": "office_visit",
-  "benefitPeriodStart": "2026-01-01",
-  "benefitPeriodEnd": "2026-12-31",
-  "metricType": "dollars_paid",
-  "delta": 120,
-  "source": "claim_line_item",
-  "sourceId": "LI-1",
-  "status": "posted"
-}
-```
+Trade-off:
 
-The accumulator should be keyed by member, policy, service, metric type, and policy-year window so the system can compute used and remaining benefits during adjudication.
+- The manual-review resolution flow is intentionally simple and not a full reviewer work queue.
 
-## What Has Not Been Defined Yet
+## Scope Cuts And Simplifications
 
-- Exact dispute, reversal, and reopened-claim state transitions beyond the v1 state machine above.
-- Whether diagnosis codes, provider network, or prior authorization will affect coverage in later versions.
-- Whether visit quantity should eventually become an explicit line-item field instead of defaulting to one visit per approved line item.
-- The exact persistence schema and service implementation behind the API contract.
+These are deliberate v1 constraints.
+
+### Simplification: One Claim Per Member Per Policy
+
+The current `createClaim` command prevents a second claim from being created for the same member-policy pair.
+
+Why:
+
+- It simplified the first workflow and the demo UI.
+
+Cost:
+
+- It is unrealistic for a real claims system and should be removed in a follow-up version.
+
+### Simplification: Billed Amount Equals Allowed Amount
+
+The adjudicator uses `billedAmount` as the allowed amount for v1.
+
+Why:
+
+- Avoids introducing a separate pricing or contract model.
+
+Cost:
+
+- It skips an important real-world adjudication step.
+
+### Simplification: No Service Dates
+
+Claims and claim lines do not currently store service dates.
+
+Why:
+
+- Reduced the number of required inputs for the first version.
+
+Cost:
+
+- The system cannot truly evaluate policy-active-at-service-time logic.
+- Benefit periods are computed using adjudication time rather than service date.
+
+### Simplification: Disputes Are Capture-Only
+
+The system can open and view disputes, but it does not resolve them or reopen claims automatically.
+
+Why:
+
+- The prompt only required that members can dispute decisions, not that appeals be fully implemented.
+
+Cost:
+
+- The workflow ends at dispute creation instead of continuing into appeals adjudication.
+
+## What I Did Not Build
+
+- Appeals workflow beyond opening a dispute.
+- Eligibility verification.
+- Service-date-aware adjudication.
+- Out-of-network or provider contract logic.
+- Allowed amount pricing.
+- Prior authorization or medical necessity review.
+- Automatic accumulator reversals.
+- Authentication and authorization.
+- Background jobs or asynchronous workflow orchestration.
+- Full CRUD administration for policies, claims, and disputes.
+
+## Important Current Assumptions
+
+- `serviceCode` is the only coverage match key.
+- `coinsurancePercent: 80` means the insurer pays 80% after deductible.
+- Only `policy_year` benefit periods exist.
+- Yearly dollar cap usage accumulates against insurer-paid dollars.
+- Visit cap usage increments by one per approved covered line.
+- Claim adjudication is explicit and does not happen automatically on claim creation.
+- The local UI is a demo operator surface, not a production-grade frontend.
+
+## Known Gaps Between Model And Implementation
+
+These are the places where the current model is ahead of the actual adjudicator.
+
+### `annualOutOfPocketMax` Is Modeled But Not Enforced
+
+Policies store `annualOutOfPocketMax`, but the current adjudication service does not apply it.
+
+### Some Reason Codes Are Defined But Not Produced
+
+The reason catalog includes:
+
+- `MISSING_INFORMATION`
+- `POLICY_NOT_ACTIVE`
+
+However, the current claim model does not yet provide the fields necessary to produce those decisions during adjudication.
+
+### Explanation Text Is Normalized More Than Personalized
+
+The system stores normalized reason text and next-step text, but the persisted decision record does not yet inject dynamic service names or exact policy cap values into the stored explanation.
+
+## Why This Shape Still Works For The Assignment
+
+The assignment emphasized domain decomposition, rule representation, state management, edge-case thinking, and explanation capability. This implementation addresses those signals by:
+
+- modeling a clear domain with explicit states
+- implementing real adjudication behavior, not just static CRUD
+- handling mixed claim outcomes and manual-review routing
+- explaining denials with normalized codes and member-facing text
+- exposing the workflow through multiple surfaces and tests
+
+It is intentionally a strong v1, not a complete insurance core system.

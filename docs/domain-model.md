@@ -1,14 +1,32 @@
 # Domain Model
 
-This document consolidates the current domain model for the Claims Processing System, including entities, relationships, and workflow state machines.
+This document describes the domain model implemented in the current v1 claims processing system. It is intentionally grounded in the code that exists in [app/](/Users/lynelle/Documents/CodeSpace/RealFast/app), not a larger future-state insurance platform.
+
+## System Overview
+
+The system models a reimbursement workflow with these core concepts:
+
+- A `Member` owns one or more `Policy` records.
+- A `Policy` contains `coverageRules` and `serviceRules`.
+- A `Claim` is submitted under exactly one policy.
+- A `Claim` contains one or more `ClaimLineItem` records.
+- Each line item produces a `LineDecision` when adjudicated.
+- Approved covered usage is recorded through `AccumulatorEntry` ledger rows.
+- A `Dispute` can be opened against a claim, with optional references to specific denied line items.
+
+The implementation exposes this model through:
+
+- a CLI
+- a REST API
+- a local web UI backed by the same application services
 
 ## Entities
 
 ### Member
 
-A member is the insured person who holds one or more policies and submits claims for reimbursement.
+A member is the insured person.
 
-Core fields:
+Fields:
 
 - `memberId`
 - `fullName`
@@ -18,7 +36,7 @@ Example:
 
 ```json
 {
-  "memberId": "MEM-1001",
+  "memberId": "MEM-0001",
   "fullName": "Aarav Mehta",
   "dateOfBirth": "1988-07-14"
 }
@@ -26,9 +44,9 @@ Example:
 
 ### Policy
 
-A policy belongs to one member and defines the coverage rules used to adjudicate claims.
+A policy belongs to exactly one member and defines the default adjudication rules for claims submitted under it.
 
-Core fields:
+Fields:
 
 - `policyId`
 - `memberId`
@@ -36,32 +54,24 @@ Core fields:
 - `effectiveDate`
 - `coverageRules`
 
-Coverage rule fields:
-
-- `benefitPeriod`
-- `deductible`
-- `coinsurancePercent`
-- `annualOutOfPocketMax`
-- `serviceRules`
-
 Example:
 
 ```json
 {
-  "policyId": "POL-2001",
-  "memberId": "MEM-1001",
+  "policyId": "POL-0001",
+  "memberId": "MEM-0001",
   "policyType": "Health PPO",
   "effectiveDate": "2026-01-01",
   "coverageRules": {
     "benefitPeriod": "policy_year",
-    "deductible": 500,
+    "deductible": 0,
     "coinsurancePercent": 80,
     "annualOutOfPocketMax": 3000,
     "serviceRules": [
       {
         "serviceCode": "office_visit",
         "covered": true,
-        "yearlyDollarCap": 1000,
+        "yearlyDollarCap": 180,
         "yearlyVisitCap": 10
       },
       {
@@ -81,11 +91,29 @@ Example:
 }
 ```
 
+### Coverage Rules
+
+Coverage rules are stored inline on the policy.
+
+Fields:
+
+- `benefitPeriod`
+- `deductible`
+- `coinsurancePercent`
+- `annualOutOfPocketMax`
+- `serviceRules`
+
+Notes:
+
+- Only `policy_year` is supported for `benefitPeriod` in v1.
+- `annualOutOfPocketMax` is modeled but not currently enforced during adjudication.
+- Deductible and coinsurance are policy-level defaults for all services in v1.
+
 ### Service Rule
 
-A service rule is a policy-scoped benefit rule matched by `serviceCode`.
+A service rule is the unit of benefit definition used during adjudication.
 
-Core fields:
+Fields:
 
 - `serviceCode`
 - `covered`
@@ -94,15 +122,15 @@ Core fields:
 
 Notes:
 
-- Coverage is matched by `serviceCode` for v1.
-- A service rule may have both a dollar cap and a visit cap.
-- `null` means no cap of that type applies.
+- Coverage is matched by exact `serviceCode`.
+- `null` means no cap of that type is present.
+- Both a dollar cap and a visit cap may be present on the same service.
 
 ### Claim
 
-A claim is submitted by a member under exactly one policy and contains one or more line items.
+A claim is submitted by a member under one policy. It is the aggregate workflow object that rolls up line-item status.
 
-Core fields:
+Fields:
 
 - `claimId`
 - `memberId`
@@ -112,47 +140,40 @@ Core fields:
 - `status`
 - `approvedLineItemCount`
 - `lineItems`
+- `lineDecisions`
 
 Example:
 
 ```json
 {
-  "claimId": "CLM-3001",
-  "memberId": "MEM-1001",
-  "policyId": "POL-2001",
+  "claimId": "CLM-0001",
+  "memberId": "MEM-0001",
+  "policyId": "POL-0001",
   "provider": {
-    "providerId": "PRV-501",
-    "name": "CityCare Clinic"
+    "providerId": "PRV-9001",
+    "name": "Downtown Clinic"
   },
-  "diagnosisCodes": [
-    "J02.9"
-  ],
+  "diagnosisCodes": ["J02.9"],
   "status": "submitted",
   "approvedLineItemCount": 0,
   "lineItems": [
     {
-      "lineItemId": "LI-1",
+      "lineItemId": "LI-0001",
       "serviceCode": "office_visit",
       "description": "Primary care consultation",
       "billedAmount": 150,
       "status": "submitted"
-    },
-    {
-      "lineItemId": "LI-2",
-      "serviceCode": "lab_test",
-      "description": "Rapid strep test",
-      "billedAmount": 80,
-      "status": "submitted"
     }
-  ]
+  ],
+  "lineDecisions": []
 }
 ```
 
 ### Claim Line Item
 
-A claim line item is the unit of adjudication. Coverage, denial, manual review, and payment are decided at the line-item level.
+A claim line item is the unit of adjudication.
 
-Core fields:
+Fields:
 
 - `lineItemId`
 - `serviceCode`
@@ -160,35 +181,43 @@ Core fields:
 - `billedAmount`
 - `status`
 
+Important v1 note:
+
+- There is no service-date field on the claim or line item yet.
+
 ### Line Decision
 
-A line decision stores the adjudication result for a line item and the member-facing explanation.
+A line decision records the adjudication outcome for a single claim line.
 
-Core fields:
+Fields:
 
 - `lineItemId`
 - `decision`
 - `reasonCode`
 - `reasonText`
 - `memberNextStep`
+- `payerAmount`
+- `memberResponsibility`
 
 Example:
 
 ```json
 {
-  "lineItemId": "LI-4",
+  "lineItemId": "LI-0002",
   "decision": "denied",
   "reasonCode": "YEARLY_CAP_EXCEEDED",
   "reasonText": "This service was denied because you have already used the yearly coverage limit allowed by your policy.",
-  "memberNextStep": "You can dispute this decision if you believe the limit was applied incorrectly."
+  "memberNextStep": "You can dispute this decision if you believe the limit was applied incorrectly.",
+  "payerAmount": 0,
+  "memberResponsibility": 80
 }
 ```
 
-### Coverage Accumulator
+### Accumulator Entry
 
-A coverage accumulator tracks how much of a policy benefit has already been used within the current policy year.
+Accumulator entries track approved usage as ledger rows.
 
-Core fields:
+Fields:
 
 - `memberId`
 - `policyId`
@@ -201,73 +230,134 @@ Core fields:
 - `sourceId`
 - `status`
 
-Example:
+Two metrics are used:
 
-```json
-{
-  "memberId": "MEM-1001",
-  "policyId": "POL-2001",
-  "serviceCode": "office_visit",
-  "benefitPeriodStart": "2026-01-01",
-  "benefitPeriodEnd": "2026-12-31",
-  "metricType": "dollars_paid",
-  "delta": 120,
-  "source": "claim_line_item",
-  "sourceId": "LI-1",
-  "status": "posted"
-}
-```
+- `dollars_paid`
+- `visits_used`
+
+Current behavior:
+
+- Dollar usage accumulates based on insurer-paid amount.
+- Visit usage increments by `1` for each approved covered line.
+- Only approved lines generate accumulator entries.
+- The enum supports `posted` and `reversed`, but v1 currently only posts entries.
+
+### Dispute
+
+A dispute is a lightweight claim-level challenge record.
+
+Fields:
+
+- `disputeId`
+- `claimId`
+- `memberId`
+- `status`
+- `reason`
+- `note`
+- `referencedLineItemIds`
+
+Current v1 note:
+
+- Only `open` disputes are modeled today.
 
 ## Relationships
 
-- One `Member` can have many `Policy` records.
-- One `Policy` belongs to one `Member`.
-- One `Policy` has many `ServiceRule` records.
-- One `Claim` belongs to one `Member`.
-- One `Claim` belongs to one `Policy`.
-- One `Claim` has many `ClaimLineItem` records.
-- One `ClaimLineItem` produces zero or one final `LineDecision` in v1.
-- One approved `ClaimLineItem` can produce one or more `CoverageAccumulator` entries.
-- `CoverageAccumulator` entries are keyed by member, policy, service, metric type, and policy-year window.
+- One member can own many policies.
+- One policy belongs to one member.
+- One policy contains many service rules.
+- One member can have many claims overall.
+- One claim belongs to one member and one policy.
+- One claim has many claim line items.
+- One claim has zero or more line decisions.
+- One approved line item produces two accumulator entries in the current implementation:
+  one for `dollars_paid` and one for `visits_used`.
+- One claim can have zero or more disputes.
 
-## Adjudication Rules
+Important implementation-specific rule:
 
-- Coverage is matched by `serviceCode`.
-- Deductible and coinsurance are policy-level defaults for v1.
-- `coinsurancePercent: 80` means the insurer pays 80% of the allowed amount after deductible.
-- Benefit limits reset on the policy effective-date anniversary using `benefitPeriod: "policy_year"`.
-- Dollar usage accumulates against insurer-paid amounts, not billed amounts.
-- Visit usage accumulates as one visit per approved covered line item.
-- If a line item would require a partial payment because a limit is almost exhausted, route the line item to `manual_review`.
-- Manual review is not a denial.
+- The current command layer only allows one claim per member per policy at a time. This is a deliberate v1 simplification, not a domain truth I would keep in a production system.
 
-## Claim State Machine
+## Adjudication Model
 
-Claim states:
+The adjudication service processes each submitted line item in order.
+
+### Matching Rule
+
+- Find the policy `serviceRule` whose `serviceCode` matches the line item `serviceCode`.
+
+### If No Covered Rule Exists
+
+- Deny the line with `SERVICE_NOT_COVERED`.
+
+### If Visit Cap Is Exhausted
+
+- Deny the line with `VISIT_CAP_EXCEEDED`.
+
+### Otherwise
+
+1. Treat `billedAmount` as the allowed amount.
+2. Apply remaining policy deductible.
+3. Apply policy coinsurance to the covered amount.
+4. Check the yearly dollar cap for that service.
+
+Outcomes:
+
+- If no dollar cap remains, deny with `YEARLY_CAP_EXCEEDED`.
+- If the normal payer amount would exceed the remaining dollar cap, route to `manual_review`.
+- Otherwise approve the line and post accumulator entries.
+
+### Manual Review Resolution
+
+Manual review is resolved explicitly by an operator action:
+
+- `manual_review -> denied`
+- `manual_review -> approved`
+
+Current implementation detail:
+
+- Manual approval can result in a capped partial payment because the reviewer path clamps payment to the remaining dollar cap rather than auto-denying the line.
+
+## Benefit Period Model
+
+Benefit periods are calculated from the policy `effectiveDate`.
+
+Rules:
+
+- Only `policy_year` is supported.
+- The benefit period resets on the effective-date anniversary.
+- The current implementation computes the active period using adjudication time, not date of service.
+
+Example:
+
+- Policy effective date: `2026-02-01`
+- Adjudication date: `2026-03-30`
+- Benefit period: `2026-02-01` through `2027-01-31`
+
+## State Machines
+
+### Claim State Machine
+
+States:
 
 - `submitted`
 - `under_review`
 - `approved`
 - `paid`
 
-Claim transitions:
+Derived rollup rules:
 
-- `submitted -> under_review`
-- `under_review -> approved`
-- `approved -> paid`
+- If any line item is still `submitted`, the claim is `under_review`.
+- If any line item is `manual_review`, the claim is `under_review`.
+- If every line item is resolved and at least one approved line remains unpaid, the claim is `approved`.
+- If every approved line item is `paid`, the claim is `paid`.
 
-Claim rollup rules:
+Important implementation note:
 
-- If any line item is unresolved, the claim status is `under_review`.
-- If any line item is `manual_review`, the claim status is `under_review`.
-- If all line items are resolved, the claim status is `approved`.
-- If all approved line items are paid, the claim status is `paid`.
-- Claim `approved` means adjudication is complete, not that every line item was approved.
-- `approvedLineItemCount` records how many line items were approved on the finalized claim.
+- The claim is treated as a derived status aggregate. The code rolls it up from line items after adjudication, review resolution, and payment actions.
 
-## Line Item State Machine
+### Line Item State Machine
 
-Line item states:
+States:
 
 - `submitted`
 - `approved`
@@ -275,7 +365,7 @@ Line item states:
 - `manual_review`
 - `paid`
 
-Line item transitions:
+Transitions:
 
 - `submitted -> approved`
 - `submitted -> denied`
@@ -284,40 +374,40 @@ Line item transitions:
 - `manual_review -> denied`
 - `approved -> paid`
 
-Line item rules:
+Notes:
 
-- `manual_review` is a pending state, not a denial.
-- `denied` does not transition to `paid`.
-- Payment is tracked at the line-item level for v1.
+- `manual_review` is pending, not denied.
+- `denied` never transitions to `paid`.
+- Payment is tracked at the line-item level.
 
-## Denial And Review Catalog
+## Reason Catalog
+
+The normalized reason catalog currently includes:
 
 - `SERVICE_NOT_COVERED`
-  Member text: "This service is not covered under your policy."
 - `YEARLY_CAP_EXCEEDED`
-  Member text: "This service was denied because you have already used the yearly coverage limit allowed by your policy."
 - `VISIT_CAP_EXCEEDED`
-  Member text: "This service was denied because you have already used the number of visits allowed by your policy for this benefit period."
 - `MISSING_INFORMATION`
-  Member text: "We could not process this service because required claim information is missing."
 - `POLICY_NOT_ACTIVE`
-  Member text: "This service was denied because the policy was not active on the date of service."
 - `MANUAL_REVIEW_REQUIRED`
-  Member text: "This service is still under review because it needs additional review before a final decision can be made."
 
-## State Machine Example
+Current implementation note:
 
-```json
-{
-  "claimId": "CLM-5001",
-  "status": "under_review",
-  "approvedLineItemCount": 2,
-  "lineItems": [
-    { "lineItemId": "LI-1", "status": "approved" },
-    { "lineItemId": "LI-2", "status": "denied" },
-    { "lineItemId": "LI-3", "status": "manual_review" }
-  ]
-}
-```
+- The adjudicator actively emits `SERVICE_NOT_COVERED`, `YEARLY_CAP_EXCEEDED`, `VISIT_CAP_EXCEEDED`, and `MANUAL_REVIEW_REQUIRED`.
+- `MISSING_INFORMATION` and `POLICY_NOT_ACTIVE` are defined for future use but are not currently produced by the adjudication service because the model does not yet contain the required input fields.
 
-This claim remains `under_review` because `LI-3` is still in `manual_review`. Once `LI-3` resolves to either `approved` or `denied`, the claim can move to `approved`. Once all approved line items are paid, the claim can move to `paid`.
+## Process Flow Example
+
+1. Create a member.
+2. Create a policy with service rules.
+3. Submit a claim with line items in `submitted`.
+4. Adjudicate the claim.
+5. If any line is routed to `manual_review`, resolve it explicitly.
+6. Mark approved lines as paid.
+7. Optionally open a dispute against denied lines.
+
+That flow is available through:
+
+- the CLI
+- the REST API
+- the local UI
