@@ -1,0 +1,645 @@
+openapi: 3.1.0
+info:
+  title: Claims Processing System API
+  version: 1.0.0
+  summary: REST JSON API for members, policies, claims, adjudication, payments, and disputes.
+servers:
+  - url: /api/v1
+paths:
+  /members:
+    post:
+      summary: Create a member
+      operationId: createMember
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMemberRequest'
+      responses:
+        '201':
+          description: Member created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+
+  /members/{memberId}:
+    get:
+      summary: Get a member
+      operationId: getMember
+      parameters:
+        - $ref: '#/components/parameters/MemberId'
+      responses:
+        '200':
+          description: Member found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+
+  /members/{memberId}/policies:
+    get:
+      summary: List policies for a member
+      operationId: listMemberPolicies
+      parameters:
+        - $ref: '#/components/parameters/MemberId'
+      responses:
+        '200':
+          description: Policies for the member
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Policy'
+    post:
+      summary: Create a policy for a member
+      operationId: createPolicy
+      parameters:
+        - $ref: '#/components/parameters/MemberId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePolicyRequest'
+      responses:
+        '201':
+          description: Policy created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+
+  /policies/{policyId}:
+    get:
+      summary: Get a policy
+      operationId: getPolicy
+      parameters:
+        - $ref: '#/components/parameters/PolicyId'
+      responses:
+        '200':
+          description: Policy found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policy'
+
+  /members/{memberId}/claims:
+    get:
+      summary: List claims for a member
+      operationId: listMemberClaims
+      parameters:
+        - $ref: '#/components/parameters/MemberId'
+      responses:
+        '200':
+          description: Claims for the member
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ClaimSummary'
+
+  /claims:
+    post:
+      summary: Create a claim
+      operationId: createClaim
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateClaimRequest'
+      responses:
+        '201':
+          description: Claim created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Claim'
+
+  /claims/{claimId}:
+    get:
+      summary: Get a claim
+      operationId: getClaim
+      parameters:
+        - $ref: '#/components/parameters/ClaimId'
+      responses:
+        '200':
+          description: Claim found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Claim'
+
+  /claims/{claimId}/adjudications:
+    post:
+      summary: Adjudicate unresolved line items on a claim
+      operationId: adjudicateClaim
+      parameters:
+        - $ref: '#/components/parameters/ClaimId'
+      responses:
+        '200':
+          description: Claim adjudicated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdjudicationResponse'
+
+  /claims/{claimId}/line-items/{lineItemId}/review-decisions:
+    post:
+      summary: Resolve a manual-review line item
+      operationId: resolveManualReview
+      parameters:
+        - $ref: '#/components/parameters/ClaimId'
+        - $ref: '#/components/parameters/LineItemId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveReviewDecisionRequest'
+      responses:
+        '200':
+          description: Manual-review line resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Claim'
+
+  /claims/{claimId}/payments:
+    post:
+      summary: Mark approved line items as paid
+      operationId: createClaimPayment
+      parameters:
+        - $ref: '#/components/parameters/ClaimId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentRequest'
+      responses:
+        '200':
+          description: Payment applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Claim'
+
+  /claims/{claimId}/disputes:
+    get:
+      summary: List disputes for a claim
+      operationId: listClaimDisputes
+      parameters:
+        - $ref: '#/components/parameters/ClaimId'
+      responses:
+        '200':
+          description: Disputes for the claim
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Dispute'
+    post:
+      summary: Open a claim dispute
+      operationId: createDispute
+      parameters:
+        - $ref: '#/components/parameters/ClaimId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDisputeRequest'
+      responses:
+        '201':
+          description: Dispute opened
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dispute'
+
+  /disputes/{disputeId}:
+    get:
+      summary: Get a dispute
+      operationId: getDispute
+      parameters:
+        - $ref: '#/components/parameters/DisputeId'
+      responses:
+        '200':
+          description: Dispute found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dispute'
+
+components:
+  parameters:
+    MemberId:
+      name: memberId
+      in: path
+      required: true
+      schema:
+        type: string
+    PolicyId:
+      name: policyId
+      in: path
+      required: true
+      schema:
+        type: string
+    ClaimId:
+      name: claimId
+      in: path
+      required: true
+      schema:
+        type: string
+    LineItemId:
+      name: lineItemId
+      in: path
+      required: true
+      schema:
+        type: string
+    DisputeId:
+      name: disputeId
+      in: path
+      required: true
+      schema:
+        type: string
+
+  schemas:
+    Member:
+      type: object
+      required: [memberId, fullName, dateOfBirth]
+      properties:
+        memberId:
+          type: string
+        fullName:
+          type: string
+        dateOfBirth:
+          type: string
+          format: date
+
+    CreateMemberRequest:
+      type: object
+      required: [fullName, dateOfBirth]
+      properties:
+        fullName:
+          type: string
+        dateOfBirth:
+          type: string
+          format: date
+
+    Policy:
+      type: object
+      required: [policyId, memberId, policyType, effectiveDate, coverageRules]
+      properties:
+        policyId:
+          type: string
+        memberId:
+          type: string
+        policyType:
+          type: string
+        effectiveDate:
+          type: string
+          format: date
+        coverageRules:
+          $ref: '#/components/schemas/CoverageRules'
+
+    CreatePolicyRequest:
+      type: object
+      required: [policyType, effectiveDate, coverageRules]
+      properties:
+        policyType:
+          type: string
+        effectiveDate:
+          type: string
+          format: date
+        coverageRules:
+          $ref: '#/components/schemas/CoverageRules'
+
+    CoverageRules:
+      type: object
+      required:
+        - benefitPeriod
+        - deductible
+        - coinsurancePercent
+        - annualOutOfPocketMax
+        - serviceRules
+      properties:
+        benefitPeriod:
+          type: string
+          enum: [policy_year]
+        deductible:
+          type: number
+        coinsurancePercent:
+          type: number
+        annualOutOfPocketMax:
+          type: number
+        serviceRules:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceRule'
+
+    ServiceRule:
+      type: object
+      required: [serviceCode, covered, yearlyDollarCap, yearlyVisitCap]
+      properties:
+        serviceCode:
+          type: string
+        covered:
+          type: boolean
+        yearlyDollarCap:
+          oneOf:
+            - type: number
+            - type: 'null'
+        yearlyVisitCap:
+          oneOf:
+            - type: integer
+            - type: 'null'
+
+    Claim:
+      type: object
+      required:
+        - claimId
+        - memberId
+        - policyId
+        - provider
+        - diagnosisCodes
+        - status
+        - approvedLineItemCount
+        - lineItems
+        - lineDecisions
+      properties:
+        claimId:
+          type: string
+        memberId:
+          type: string
+        policyId:
+          type: string
+        provider:
+          $ref: '#/components/schemas/Provider'
+        diagnosisCodes:
+          type: array
+          items:
+            type: string
+        status:
+          $ref: '#/components/schemas/ClaimStatus'
+        approvedLineItemCount:
+          type: integer
+        lineItems:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClaimLineItem'
+        lineDecisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/LineDecision'
+
+    ClaimSummary:
+      type: object
+      required: [claimId, memberId, policyId, status, approvedLineItemCount]
+      properties:
+        claimId:
+          type: string
+        memberId:
+          type: string
+        policyId:
+          type: string
+        status:
+          $ref: '#/components/schemas/ClaimStatus'
+        approvedLineItemCount:
+          type: integer
+
+    CreateClaimRequest:
+      type: object
+      required: [memberId, policyId, provider, diagnosisCodes, lineItems]
+      properties:
+        memberId:
+          type: string
+        policyId:
+          type: string
+        provider:
+          $ref: '#/components/schemas/Provider'
+        diagnosisCodes:
+          type: array
+          items:
+            type: string
+        lineItems:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/CreateClaimLineItemRequest'
+
+    Provider:
+      type: object
+      required: [providerId, name]
+      properties:
+        providerId:
+          type: string
+        name:
+          type: string
+
+    ClaimLineItem:
+      type: object
+      required: [lineItemId, serviceCode, description, billedAmount, status]
+      properties:
+        lineItemId:
+          type: string
+        serviceCode:
+          type: string
+        description:
+          type: string
+        billedAmount:
+          type: number
+        status:
+          $ref: '#/components/schemas/LineItemStatus'
+
+    CreateClaimLineItemRequest:
+      type: object
+      required: [serviceCode, description, billedAmount]
+      properties:
+        serviceCode:
+          type: string
+        description:
+          type: string
+        billedAmount:
+          type: number
+
+    LineDecision:
+      type: object
+      required:
+        - lineItemId
+        - decision
+        - reasonCode
+        - reasonText
+      properties:
+        lineItemId:
+          type: string
+        decision:
+          $ref: '#/components/schemas/LineDecisionType'
+        reasonCode:
+          $ref: '#/components/schemas/ReasonCode'
+        reasonText:
+          type: string
+        memberNextStep:
+          oneOf:
+            - type: string
+            - type: 'null'
+        payerAmount:
+          oneOf:
+            - type: number
+            - type: 'null'
+        memberResponsibility:
+          oneOf:
+            - type: number
+            - type: 'null'
+
+    CoverageAccumulatorEntry:
+      type: object
+      required:
+        - memberId
+        - policyId
+        - serviceCode
+        - benefitPeriodStart
+        - benefitPeriodEnd
+        - metricType
+        - delta
+        - source
+        - sourceId
+        - status
+      properties:
+        memberId:
+          type: string
+        policyId:
+          type: string
+        serviceCode:
+          type: string
+        benefitPeriodStart:
+          type: string
+          format: date
+        benefitPeriodEnd:
+          type: string
+          format: date
+        metricType:
+          type: string
+          enum: [dollars_paid, visits_used]
+        delta:
+          type: number
+        source:
+          type: string
+          enum: [claim_line_item]
+        sourceId:
+          type: string
+        status:
+          type: string
+          enum: [posted, reversed]
+
+    AdjudicationResponse:
+      type: object
+      required: [claim, accumulatorEffects]
+      properties:
+        claim:
+          $ref: '#/components/schemas/Claim'
+        accumulatorEffects:
+          type: array
+          items:
+            $ref: '#/components/schemas/CoverageAccumulatorEntry'
+
+    ResolveReviewDecisionRequest:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [approved, denied]
+        reasonCode:
+          $ref: '#/components/schemas/ReasonCode'
+        reasonText:
+          type: string
+        memberNextStep:
+          type: string
+
+    CreatePaymentRequest:
+      type: object
+      required: [lineItemIds]
+      properties:
+        lineItemIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+
+    Dispute:
+      type: object
+      required: [disputeId, claimId, memberId, status, reason, referencedLineItemIds]
+      properties:
+        disputeId:
+          type: string
+        claimId:
+          type: string
+        memberId:
+          type: string
+        status:
+          type: string
+          enum: [open]
+        reason:
+          type: string
+        note:
+          oneOf:
+            - type: string
+            - type: 'null'
+        referencedLineItemIds:
+          type: array
+          items:
+            type: string
+
+    CreateDisputeRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+        note:
+          type: string
+        referencedLineItemIds:
+          type: array
+          items:
+            type: string
+
+    ClaimStatus:
+      type: string
+      enum: [submitted, under_review, approved, paid]
+
+    LineItemStatus:
+      type: string
+      enum: [submitted, approved, denied, manual_review, paid]
+
+    LineDecisionType:
+      type: string
+      enum: [approved, denied, manual_review]
+
+    ReasonCode:
+      type: string
+      enum:
+        - SERVICE_NOT_COVERED
+        - YEARLY_CAP_EXCEEDED
+        - VISIT_CAP_EXCEEDED
+        - MISSING_INFORMATION
+        - POLICY_NOT_ACTIVE
+        - MANUAL_REVIEW_REQUIRED
