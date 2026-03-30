@@ -1,4 +1,4 @@
-# Chat Export Summary
+# Chat Exports
 
 This file is a reconstructed, transcript-style summary of the main AI collaboration threads used during build and submission prep. It is not a raw platform export.
 
